@@ -36,6 +36,11 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
+      - name: Inject build number
+        run: |
+          sed -i "s/build 0/build ${{ github.run_number }}/g" index.html
+          sed -i "s/dk-energy-prices-v2/dk-energy-prices-v2-b${{ github.run_number }}/g" sw.js
+
       - name: Create artifact directory
         run: |
           mkdir -p _site

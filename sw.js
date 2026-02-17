@@ -1,12 +1,12 @@
-const CACHE_NAME = 'dk-energy-prices-v1';
+const CACHE_NAME = 'dk-energy-prices-v2';
 const STATIC_ASSETS = [
-    '/',
-    '/index.html',
-    '/styles.css',
-    '/app.js',
-    '/manifest.json',
-    '/icons/icon-192.png',
-    '/icons/icon-512.png',
+    './',
+    './index.html',
+    './styles.css',
+    './app.js',
+    './manifest.json',
+    './icons/icon-192.png',
+    './icons/icon-512.png',
     'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
