@@ -365,12 +365,14 @@ function processPriceDataLegacy(records) {
  * Uses facility_number 27 as specified
  */
 async function fetchFuelPrices() {
+    // Initialize currentPrices if null
+    if (!state.currentPrices) {
+        state.currentPrices = {};
+    }
+    
     // Set static prices for gas and water (no real-time APIs available)
-    state.currentPrices = {
-        ...state.currentPrices,
-        gas: CONFIG.STATIC_PRICES.gas,
-        water: CONFIG.STATIC_PRICES.water,
-    };
+    state.currentPrices.gas = CONFIG.STATIC_PRICES.gas;
+    state.currentPrices.water = CONFIG.STATIC_PRICES.water;
     
     // Fetch fuel prices from OK API
     try {
