@@ -432,6 +432,12 @@ body {
     opacity: 0.5;
 }
 
+.author {
+    margin-top: 4px;
+    opacity: 0.6;
+    font-style: italic;
+}
+
 /* Loading Overlay */
 .loading-overlay {
     position: fixed;
