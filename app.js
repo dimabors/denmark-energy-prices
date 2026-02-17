@@ -7,16 +7,43 @@
 // Configuration
 const CONFIG = {
     ELECTRICITY_API_BASE: 'https://api.energidataservice.dk/dataset',
+    FUEL_API_BASE: 'https://mobility-prices.ok.dk/api/v1/fuel-prices',
+    OK_FACILITY_NUMBER: 27, // Selected OK station
     DATASET_NEW: 'DayAheadPrices', // For data after 2025-10-01
     DATASET_OLD: 'Elspotprices',   // For historical data before 2025-10-01
     CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
     REFRESH_INTERVAL: 5 * 60 * 1000, // 5 minutes
     MWH_TO_KWH: 1000, // Convert MWh to kWh
+    
+    // Grid costs for DK2 (Radius/Copenhagen area) in DKK/kWh
+    // These include: nettarif, systemtarif, balancetarif, elafgift
+    GRID_COSTS: {
+        DK1: {
+            // West Denmark - N1, Konstant, etc.
+            LOW: 0.15,    // Night hours (00-06)
+            MEDIUM: 0.20, // Shoulder hours (06-17, 21-00)
+            HIGH: 0.25,   // Peak hours (17-21)
+        },
+        DK2: {
+            // East Denmark - Radius
+            LOW: 0.15,    // Night hours (00-06)
+            MEDIUM: 0.22, // Shoulder hours (06-17, 21-00) 
+            HIGH: 0.30,   // Peak hours (17-21)
+        }
+    },
+    
+    // Static prices (water and gas don't have real-time APIs)
+    STATIC_PRICES: {
+        // Novafos water prices 2026 (DKK/m³ including VAT)
+        water: 56.25, // Drikkevand + spildevand + afgifter
+        // Evida/Andel gas price (DKK/m³)
+        gas: 8.95,
+    }
 };
 
 // State
 let state = {
-    region: 'DK1',
+    region: 'DK2', // Default to DK2 (East Denmark/Copenhagen)
     currentPrices: null,
     todayPrices: [],
     tomorrowPrices: [],
@@ -30,6 +57,8 @@ let state = {
 const elements = {
     loadingOverlay: document.getElementById('loading-overlay'),
     elecPrice: document.getElementById('elec-price'),
+    spotPrice: document.getElementById('spot-price'),
+    gridCost: document.getElementById('grid-cost'),
     elecMin: document.getElementById('elec-min'),
     elecMax: document.getElementById('elec-max'),
     elecAvg: document.getElementById('elec-avg'),
@@ -213,15 +242,41 @@ async function fetchHistoricalPrices() {
         const data = await response.json();
         
         if (data.records && data.records.length > 0) {
-            state.historicalPrices = data.records.map(record => ({
-                time: new Date(record.TimeUTC || record.TimeDK),
-                priceDKK: record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH,
-                priceEUR: record.DayAheadPriceEUR / CONFIG.MWH_TO_KWH,
-            }));
+            state.historicalPrices = data.records.map(record => {
+                const time = new Date(record.TimeUTC || record.TimeDK);
+                const spotPrice = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH;
+                const gridCost = getGridCost(time, state.region);
+                return {
+                    time: time,
+                    spotPriceDKK: spotPrice,
+                    gridCost: gridCost,
+                    priceDKK: spotPrice + gridCost,
+                    priceEUR: record.DayAheadPriceEUR / CONFIG.MWH_TO_KWH,
+                };
+            });
         }
     } catch (error) {
         console.error('Failed to fetch historical prices:', error);
     }
+}
+
+/**
+ * Get grid cost based on time of day and region
+ */
+function getGridCost(time, region) {
+    const hour = time.getHours();
+    const costs = CONFIG.GRID_COSTS[region] || CONFIG.GRID_COSTS.DK2;
+    
+    // Night: 00-06
+    if (hour >= 0 && hour < 6) {
+        return costs.LOW;
+    }
+    // Peak: 17-21
+    if (hour >= 17 && hour < 21) {
+        return costs.HIGH;
+    }
+    // Shoulder: 06-17, 21-00
+    return costs.MEDIUM;
 }
 
 function processPriceData(records) {
@@ -232,11 +287,18 @@ function processPriceData(records) {
     const tomorrowMidnight = new Date(todayMidnight);
     tomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
     
-    const allPrices = records.map(record => ({
-        time: new Date(record.TimeUTC || record.TimeDK),
-        priceDKK: record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH, // Convert to DKK/kWh
-        priceEUR: record.DayAheadPriceEUR / CONFIG.MWH_TO_KWH,
-    }));
+    const allPrices = records.map(record => {
+        const time = new Date(record.TimeUTC || record.TimeDK);
+        const spotPrice = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH; // Convert to DKK/kWh
+        const gridCost = getGridCost(time, state.region);
+        return {
+            time: time,
+            spotPriceDKK: spotPrice,
+            gridCost: gridCost,
+            priceDKK: spotPrice + gridCost, // Total price including grid
+            priceEUR: record.DayAheadPriceEUR / CONFIG.MWH_TO_KWH,
+        };
+    });
     
     state.todayPrices = allPrices.filter(p => p.time >= todayMidnight && p.time < tomorrowMidnight);
     state.tomorrowPrices = allPrices.filter(p => p.time >= tomorrowMidnight);
@@ -251,6 +313,8 @@ function processPriceData(records) {
     if (currentPriceEntry) {
         state.currentPrices = {
             electricity: currentPriceEntry.priceDKK,
+            spotPrice: currentPriceEntry.spotPriceDKK,
+            gridCost: currentPriceEntry.gridCost,
             electricityEUR: currentPriceEntry.priceEUR,
         };
     }
@@ -264,11 +328,18 @@ function processPriceDataLegacy(records) {
     const tomorrowMidnight = new Date(todayMidnight);
     tomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
     
-    const allPrices = records.map(record => ({
-        time: new Date(record.HourUTC || record.HourDK),
-        priceDKK: record.SpotPriceDKK / CONFIG.MWH_TO_KWH,
-        priceEUR: record.SpotPriceEUR / CONFIG.MWH_TO_KWH,
-    }));
+    const allPrices = records.map(record => {
+        const time = new Date(record.HourUTC || record.HourDK);
+        const spotPrice = record.SpotPriceDKK / CONFIG.MWH_TO_KWH;
+        const gridCost = getGridCost(time, state.region);
+        return {
+            time: time,
+            spotPriceDKK: spotPrice,
+            gridCost: gridCost,
+            priceDKK: spotPrice + gridCost,
+            priceEUR: record.SpotPriceEUR / CONFIG.MWH_TO_KWH,
+        };
+    });
     
     state.todayPrices = allPrices.filter(p => p.time >= todayMidnight && p.time < tomorrowMidnight);
     state.tomorrowPrices = allPrices.filter(p => p.time >= tomorrowMidnight);
@@ -282,33 +353,58 @@ function processPriceDataLegacy(records) {
     if (currentPriceEntry) {
         state.currentPrices = {
             electricity: currentPriceEntry.priceDKK,
+            spotPrice: currentPriceEntry.spotPriceDKK,
+            gridCost: currentPriceEntry.gridCost,
             electricityEUR: currentPriceEntry.priceEUR,
         };
     }
 }
 
 /**
- * Fetch fuel prices
- * Note: Using sample data as the benzinpriser.io API requires authentication
- * In production, this would connect to a real fuel price API
+ * Fetch fuel prices from OK API
+ * Uses facility_number 27 as specified
  */
 async function fetchFuelPrices() {
-    // Sample fuel prices for Denmark (based on typical 2024-2026 prices)
-    // These should be replaced with actual API calls when available
+    // Set static prices for gas and water (no real-time APIs available)
     state.currentPrices = {
         ...state.currentPrices,
-        benzin: 14.29,  // DKK per liter (Benzin 95)
-        diesel: 12.49,  // DKK per liter
-        gas: 8.50,      // DKK per m³ (natural gas)
-        water: 45.00,   // DKK per m³ (including taxes)
+        gas: CONFIG.STATIC_PRICES.gas,
+        water: CONFIG.STATIC_PRICES.water,
     };
     
-    // Try to fetch from alternative sources
+    // Fetch fuel prices from OK API
     try {
-        // You can add actual API calls here when APIs become available
-        // const fuelData = await fetchFromFuelAPI();
+        const response = await fetch(CONFIG.FUEL_API_BASE);
+        if (!response.ok) throw new Error('OK API request failed');
+        
+        const data = await response.json();
+        
+        // Find facility 27 or use first available
+        const facility = data.items?.find(f => f.facility_number === CONFIG.OK_FACILITY_NUMBER) 
+                       || data.items?.[0];
+        
+        if (facility && facility.prices) {
+            // Extract benzin (Blyfri 95) and diesel prices
+            const benzin = facility.prices.find(p => p.product_name === 'Blyfri 95');
+            const diesel = facility.prices.find(p => p.product_name === 'Svovlfri Diesel');
+            
+            if (benzin) {
+                state.currentPrices.benzin = benzin.price;
+            }
+            if (diesel) {
+                state.currentPrices.diesel = diesel.price;
+            }
+            
+            console.log(`Fuel prices from OK facility ${facility.facility_number} (${facility.city})`);
+        }
     } catch (error) {
-        console.log('Using fallback fuel prices');
+        console.error('Failed to fetch OK fuel prices:', error);
+        // Fallback to sample prices
+        state.currentPrices = {
+            ...state.currentPrices,
+            benzin: 13.39,  // Fallback based on typical prices
+            diesel: 12.69,
+        };
     }
 }
 
@@ -328,10 +424,21 @@ function updateElectricityDisplay() {
     if (!state.currentPrices || !state.currentPrices.electricity) return;
     
     const price = state.currentPrices.electricity;
+    const spotPrice = state.currentPrices.spotPrice || price;
+    const gridCost = state.currentPrices.gridCost || 0;
+    
     elements.elecPrice.textContent = price.toFixed(2);
     elements.elecPrice.className = 'price-value ' + getPriceClass(price);
     
-    // Calculate min, max, avg for today
+    // Update breakdown display
+    if (elements.spotPrice) {
+        elements.spotPrice.textContent = spotPrice.toFixed(2);
+    }
+    if (elements.gridCost) {
+        elements.gridCost.textContent = gridCost.toFixed(2);
+    }
+    
+    // Calculate min, max, avg for today (using total price)
     if (state.todayPrices.length > 0) {
         const prices = state.todayPrices.map(p => p.priceDKK);
         const min = Math.min(...prices);
@@ -429,8 +536,18 @@ function updateChart(period) {
     }
     
     labels = chartData.map(p => formatTimeLabel(p.time, period));
-    const prices = chartData.map(p => p.priceDKK);
-    const colors = prices.map(p => getPriceColor(p));
+    
+    // Extract spot prices and grid costs for stacked chart
+    const spotPrices = chartData.map(p => p.spotPriceDKK || p.priceDKK);
+    const gridCosts = chartData.map(p => p.gridCost || 0);
+    
+    // Get colors based on total price
+    const spotColors = chartData.map(p => {
+        const total = p.priceDKK || (p.spotPriceDKK + p.gridCost);
+        if (total < 1.5) return 'rgba(6, 214, 160, 0.85)';  // Green
+        if (total < 3) return 'rgba(255, 209, 102, 0.85)';   // Yellow
+        return 'rgba(239, 71, 111, 0.85)';                   // Red
+    });
     
     if (state.chart) {
         state.chart.destroy();
@@ -440,31 +557,54 @@ function updateChart(period) {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Price (DKK/kWh)',
-                data: prices,
-                backgroundColor: colors,
-                borderRadius: 4,
-                borderSkipped: false,
-            }]
+            datasets: [
+                {
+                    label: 'Spot Price',
+                    data: spotPrices,
+                    backgroundColor: spotColors,
+                    borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 4, bottomRight: 4 },
+                    borderSkipped: false,
+                    stack: 'stack0',
+                },
+                {
+                    label: 'Grid Cost (Net)',
+                    data: gridCosts,
+                    backgroundColor: 'rgba(100, 100, 120, 0.7)',
+                    borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
+                    borderSkipped: false,
+                    stack: 'stack0',
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    display: false,
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: '#a0a0a0',
+                        usePointStyle: true,
+                        padding: 10,
+                        font: { size: 10 }
+                    }
                 },
                 tooltip: {
                     callbacks: {
-                        label: function(context) {
-                            return `${context.parsed.y.toFixed(2)} DKK/kWh`;
+                        afterBody: function(context) {
+                            const idx = context[0].dataIndex;
+                            const spot = spotPrices[idx];
+                            const grid = gridCosts[idx];
+                            const total = spot + grid;
+                            return `\nTotal: ${total.toFixed(2)} DKK/kWh`;
                         }
                     }
                 }
             },
             scales: {
                 x: {
+                    stacked: true,
                     grid: {
                         display: false,
                     },
@@ -476,6 +616,7 @@ function updateChart(period) {
                     }
                 },
                 y: {
+                    stacked: true,
                     beginAtZero: true,
                     grid: {
                         color: 'rgba(255, 255, 255, 0.1)',
@@ -710,7 +851,7 @@ function loadFromCache() {
             const age = Date.now() - cacheData.timestamp;
             
             if (age < CONFIG.CACHE_DURATION) {
-                state.region = cacheData.state.region || 'DK1';
+                state.region = cacheData.state.region || 'DK2';
                 state.currentPrices = cacheData.state.currentPrices;
                 state.todayPrices = (cacheData.state.todayPrices || []).map(p => ({
                     ...p,
@@ -729,13 +870,11 @@ function loadFromCache() {
             }
         }
         
-        // Load preferred region
-        const preferredRegion = localStorage.getItem('preferredRegion');
-        if (preferredRegion) {
-            state.region = preferredRegion;
-            elements.dk1Btn.classList.toggle('active', preferredRegion === 'DK1');
-            elements.dk2Btn.classList.toggle('active', preferredRegion === 'DK2');
-        }
+        // Load preferred region or default to DK2
+        const preferredRegion = localStorage.getItem('preferredRegion') || 'DK2';
+        state.region = preferredRegion;
+        elements.dk1Btn.classList.toggle('active', preferredRegion === 'DK1');
+        elements.dk2Btn.classList.toggle('active', preferredRegion === 'DK2');
     } catch (error) {
         console.error('Failed to load from cache:', error);
     }

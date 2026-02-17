@@ -171,6 +171,45 @@ body {
     color: var(--text-secondary);
 }
 
+.card-subtitle {
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    opacity: 0.8;
+}
+
+.card-source {
+    font-size: 0.7rem;
+    color: var(--accent-blue);
+    text-align: center;
+    margin-top: -4px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 500;
+}
+
+.price-breakdown {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+}
+
+.breakdown-item {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.breakdown-item span {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
 .price-details {
     display: flex;
     justify-content: space-between;

@@ -20,8 +20,8 @@
         <header class="header">
             <h1>🇩🇰 Energy Prices</h1>
             <div class="region-selector">
-                <button id="dk1-btn" class="region-btn active">DK1 (West)</button>
-                <button id="dk2-btn" class="region-btn">DK2 (East)</button>
+                <button id="dk1-btn" class="region-btn">DK1 (West)</button>
+                <button id="dk2-btn" class="region-btn active">DK2 (East)</button>
             </div>
             <div class="last-updated">
                 <span id="last-updated-text">Loading...</span>
@@ -38,9 +38,14 @@
                     <span class="card-title">Electricity</span>
                     <span class="price-trend" id="elec-trend"></span>
                 </div>
+                <div class="card-subtitle">Spot price + Grid costs (incl. nettarif)</div>
                 <div class="current-price">
                     <span class="price-value" id="elec-price">--</span>
                     <span class="price-unit">DKK/kWh</span>
+                </div>
+                <div class="price-breakdown">
+                    <span class="breakdown-item">Spot: <span id="spot-price">--</span></span>
+                    <span class="breakdown-item">Grid: <span id="grid-cost">--</span></span>
                 </div>
                 <div class="price-details">
                     <div class="detail-item">
@@ -65,6 +70,7 @@
                         <span class="card-icon">⛽</span>
                         <span class="card-title">Benzin 95</span>
                     </div>
+                    <div class="card-source">OK</div>
                     <div class="current-price">
                         <span class="price-value" id="benzin-price">--</span>
                         <span class="price-unit">DKK/L</span>
@@ -75,6 +81,7 @@
                         <span class="card-icon">🛢️</span>
                         <span class="card-title">Diesel</span>
                     </div>
+                    <div class="card-source">OK</div>
                     <div class="current-price">
                         <span class="price-value" id="diesel-price">--</span>
                         <span class="price-unit">DKK/L</span>
@@ -89,6 +96,7 @@
                         <span class="card-icon">🔥</span>
                         <span class="card-title">Natural Gas</span>
                     </div>
+                    <div class="card-source">Evida</div>
                     <div class="current-price">
                         <span class="price-value" id="gas-price">--</span>
                         <span class="price-unit">DKK/m³</span>
@@ -99,6 +107,7 @@
                         <span class="card-icon">💧</span>
                         <span class="card-title">Water</span>
                     </div>
+                    <div class="card-source">Novafos</div>
                     <div class="current-price">
                         <span class="price-value" id="water-price">--</span>
                         <span class="price-unit">DKK/m³</span>
