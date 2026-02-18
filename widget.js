@@ -7,14 +7,13 @@ const CONFIG = {
     ELECTRICITY_API_BASE: 'https://api.energidataservice.dk/dataset',
     FUEL_API_BASE: 'https://mobility-prices.ok.dk/api/v1/fuel-prices',
     OK_FACILITY_NUMBER: 27,
-    DATASET: 'DayAheadPrices',
+    DATASET: 'Elspotprices',
     MWH_TO_KWH: 1000,
     REGION: 'DK2',
-    GRID_COSTS: {
-        LOW: 0.15,
-        MEDIUM: 0.22,
-        HIGH: 0.30,
-    },
+    VAT: 1.25,
+    // 2025/2026 rates for DK2 (Radius) - DKK/kWh without VAT
+    GRID_TARIFFS: { LOW: 0.1863, MEDIUM: 0.5477, HIGH: 1.3520 },
+    FIXED_FEES: { transmission: 0.049, system: 0.054, elafgift: 0.00872 },
     REFRESH_INTERVAL: 5 * 60 * 1000, // 5 minutes
 };
 
@@ -65,10 +64,22 @@ async function fetchElectricityPrices() {
     }
 }
 
-function getGridCost(hour) {
-    if (hour >= 0 && hour < 6) return CONFIG.GRID_COSTS.LOW;
-    if (hour >= 17 && hour < 21) return CONFIG.GRID_COSTS.HIGH;
-    return CONFIG.GRID_COSTS.MEDIUM;
+function getDistributionTariff(hour) {
+    if (hour >= 0 && hour < 6) return CONFIG.GRID_TARIFFS.LOW;
+    if (hour >= 17 && hour < 21) return CONFIG.GRID_TARIFFS.HIGH;
+    return CONFIG.GRID_TARIFFS.MEDIUM;
+}
+
+function getFeesWithVAT(hour) {
+    const distributionTariff = getDistributionTariff(hour);
+    const totalFees = distributionTariff + CONFIG.FIXED_FEES.TRANSMISSION + CONFIG.FIXED_FEES.SYSTEM + CONFIG.FIXED_FEES.ELAFGIFT;
+    return totalFees * CONFIG.VAT;
+}
+
+function calculateTotalPrice(spotBeforeVAT, hour) {
+    const distributionTariff = getDistributionTariff(hour);
+    const totalBeforeVAT = spotBeforeVAT + distributionTariff + CONFIG.FIXED_FEES.TRANSMISSION + CONFIG.FIXED_FEES.SYSTEM + CONFIG.FIXED_FEES.ELAFGIFT;
+    return totalBeforeVAT * CONFIG.VAT;
 }
 
 function processPriceData(records) {
@@ -81,16 +92,17 @@ function processPriceData(records) {
     
     prices = records.map(record => {
         const time = new Date(record.HourUTC || record.TimeUTC);
-        const spotPriceDKK = (record.SpotPriceDKK ?? record.PriceEUR * 7.45) / CONFIG.MWH_TO_KWH;
+        const spotBeforeVAT = (record.SpotPriceDKK ?? record.PriceEUR * 7.45) / CONFIG.MWH_TO_KWH;
         const hour = time.getHours();
-        const gridCost = getGridCost(hour);
-        const totalPrice = spotPriceDKK + gridCost;
+        const spotWithVAT = spotBeforeVAT * CONFIG.VAT;
+        const feesWithVAT = getFeesWithVAT(hour);
+        const totalPrice = calculateTotalPrice(spotBeforeVAT, hour);
         
         return {
             time,
             hour,
-            spotPrice: spotPriceDKK,
-            gridCost,
+            spotPrice: spotWithVAT,
+            gridCost: feesWithVAT,
             totalPrice,
         };
     }).filter(p => p.time >= todayMidnight && p.time < tomorrowMidnight);

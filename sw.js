@@ -9,6 +9,8 @@ const STATIC_ASSETS = [
     `${BASE_PATH}/widget.html`,
     `${BASE_PATH}/widget.js`,
     `${BASE_PATH}/electricity.html`,
+    `${BASE_PATH}/electricity-dk1.html`,
+    `${BASE_PATH}/electricity-dk2.html`,
     `${BASE_PATH}/diesel.html`,
     `${BASE_PATH}/benzin.html`,
     `${BASE_PATH}/gas.html`,

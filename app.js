@@ -14,21 +14,29 @@ const CONFIG = {
     CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
     REFRESH_INTERVAL: 5 * 60 * 1000, // 5 minutes
     MWH_TO_KWH: 1000, // Convert MWh to kWh
+    VAT: 1.25, // 25% VAT in Denmark
     
-    // Grid costs for DK2 (Radius/Copenhagen area) in DKK/kWh
-    // These include: nettarif, systemtarif, balancetarif, elafgift
-    GRID_COSTS: {
+    // Fixed fees (DKK/kWh without VAT) - 2025/2026 rates
+    FIXED_FEES: {
+        transmission: 0.049,  // Energinet transmission tariff
+        system: 0.054,        // System tariff
+        elafgift: 0.00872,    // Electricity tax (reduced rate)
+    },
+    
+    // Distribution tariffs (nettarif) by grid company (DKK/kWh without VAT)
+    // Winter tariffs (Oct-Mar) - 2025/2026
+    GRID_TARIFFS: {
         DK1: {
-            // West Denmark - N1, Konstant, etc.
-            LOW: 0.15,    // Night hours (00-06)
-            MEDIUM: 0.20, // Shoulder hours (06-17, 21-00)
-            HIGH: 0.25,   // Peak hours (17-21)
+            // West Denmark - N1/Konstant/Norlys
+            LOW: 0.1536,      // Night (00-06)
+            MEDIUM: 0.4098,   // Shoulder (06-17, 21-00)
+            HIGH: 0.9821,     // Peak (17-21)
         },
         DK2: {
-            // East Denmark - Radius
-            LOW: 0.15,    // Night hours (00-06)
-            MEDIUM: 0.22, // Shoulder hours (06-17, 21-00) 
-            HIGH: 0.30,   // Peak hours (17-21)
+            // East Denmark - Radius (Copenhagen area)
+            LOW: 0.1863,      // Night (00-06)
+            MEDIUM: 0.5477,   // Shoulder (06-17, 21-00) 
+            HIGH: 1.3520,     // Peak (17-21)
         }
     },
     
@@ -272,22 +280,54 @@ async function fetchHistoricalPrices() {
 }
 
 /**
- * Get grid cost based on time of day and region
+ * Get all fees (grid tariff + fixed fees) based on time of day and region
+ * Returns object with breakdown for display
  */
 function getGridCost(time, region) {
     const hour = time.getHours();
-    const costs = CONFIG.GRID_COSTS[region] || CONFIG.GRID_COSTS.DK2;
+    const tariffs = CONFIG.GRID_TARIFFS[region] || CONFIG.GRID_TARIFFS.DK2;
+    const fixed = CONFIG.FIXED_FEES;
     
-    // Night: 00-06
+    // Get distribution tariff based on time of day
+    let distributionTariff;
     if (hour >= 0 && hour < 6) {
-        return costs.LOW;
+        distributionTariff = tariffs.LOW;      // Night: 00-06
+    } else if (hour >= 17 && hour < 21) {
+        distributionTariff = tariffs.HIGH;     // Peak: 17-21
+    } else {
+        distributionTariff = tariffs.MEDIUM;   // Shoulder: 06-17, 21-00
     }
-    // Peak: 17-21
-    if (hour >= 17 && hour < 21) {
-        return costs.HIGH;
+    
+    // Total fees before VAT
+    const feesBeforeVAT = distributionTariff + fixed.transmission + fixed.system + fixed.elafgift;
+    
+    // Return total fees including VAT
+    return feesBeforeVAT * CONFIG.VAT;
+}
+
+/**
+ * Calculate total price with all components
+ */
+function calculateTotalPrice(spotPriceBeforeVAT, time, region) {
+    const tariffs = CONFIG.GRID_TARIFFS[region] || CONFIG.GRID_TARIFFS.DK2;
+    const fixed = CONFIG.FIXED_FEES;
+    const hour = time.getHours();
+    
+    // Get distribution tariff based on time
+    let distributionTariff;
+    if (hour >= 0 && hour < 6) {
+        distributionTariff = tariffs.LOW;
+    } else if (hour >= 17 && hour < 21) {
+        distributionTariff = tariffs.HIGH;
+    } else {
+        distributionTariff = tariffs.MEDIUM;
     }
-    // Shoulder: 06-17, 21-00
-    return costs.MEDIUM;
+    
+    // Total before VAT
+    const totalBeforeVAT = spotPriceBeforeVAT + distributionTariff + fixed.transmission + fixed.system + fixed.elafgift;
+    
+    // Total with 25% VAT
+    return totalBeforeVAT * CONFIG.VAT;
 }
 
 function processPriceData(records) {
@@ -300,13 +340,16 @@ function processPriceData(records) {
     
     const allPrices = records.map(record => {
         const time = new Date(record.TimeUTC || record.TimeDK);
-        const spotPrice = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH; // Convert to DKK/kWh
+        const spotPriceBeforeVAT = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH; // Raw spot price (no VAT)
+        const totalPrice = calculateTotalPrice(spotPriceBeforeVAT, time, state.region);
         const gridCost = getGridCost(time, state.region);
+        const spotPriceWithVAT = spotPriceBeforeVAT * CONFIG.VAT;
+        
         return {
             time: time,
-            spotPriceDKK: spotPrice,
-            gridCost: gridCost,
-            priceDKK: spotPrice + gridCost, // Total price including grid
+            spotPriceDKK: spotPriceWithVAT,  // Spot price with VAT for display
+            gridCost: gridCost,              // All fees with VAT for display
+            priceDKK: totalPrice,            // Total price with all fees and VAT
             priceEUR: record.DayAheadPriceEUR / CONFIG.MWH_TO_KWH,
         };
     });
@@ -342,13 +385,16 @@ function processPriceDataLegacy(records) {
     
     const allPrices = records.map(record => {
         const time = new Date(record.HourUTC || record.HourDK);
-        const spotPrice = record.SpotPriceDKK / CONFIG.MWH_TO_KWH;
+        const spotPriceBeforeVAT = record.SpotPriceDKK / CONFIG.MWH_TO_KWH;
+        const totalPrice = calculateTotalPrice(spotPriceBeforeVAT, time, state.region);
         const gridCost = getGridCost(time, state.region);
+        const spotPriceWithVAT = spotPriceBeforeVAT * CONFIG.VAT;
+        
         return {
             time: time,
-            spotPriceDKK: spotPrice,
+            spotPriceDKK: spotPriceWithVAT,
             gridCost: gridCost,
-            priceDKK: spotPrice + gridCost,
+            priceDKK: totalPrice,
             priceEUR: record.SpotPriceEUR / CONFIG.MWH_TO_KWH,
         };
     });

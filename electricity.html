@@ -60,12 +60,15 @@
 
     <script>
         const CONFIG = {
-            API_BASE: 'https://api.energidataservice.dk/dataset',
-            DATASET: 'DayAheadPrices',
+            API_BASE: 'https://api.energidataservice.dk/dataset/Elspotprices',
             MWH_TO_KWH: 1000,
-            GRID_COSTS: {
-                DK1: { LOW: 0.15, MEDIUM: 0.20, HIGH: 0.25 },
-                DK2: { LOW: 0.15, MEDIUM: 0.22, HIGH: 0.30 }
+            VAT: 1.25,
+            // Fixed fees (DKK/kWh without VAT)
+            FIXED_FEES: { transmission: 0.049, system: 0.054, elafgift: 0.00872 },
+            // Distribution tariffs by region (DKK/kWh without VAT) - 2025/2026 winter rates
+            GRID_TARIFFS: {
+                DK1: { LOW: 0.1536, MEDIUM: 0.4098, HIGH: 0.9821 },
+                DK2: { LOW: 0.1863, MEDIUM: 0.5477, HIGH: 1.3520 }
             },
             REFRESH_INTERVAL: 5 * 60 * 1000
         };
@@ -83,11 +86,27 @@
             fetchPrices();
         }
 
-        function getGridCost(hour) {
-            const costs = CONFIG.GRID_COSTS[state.region];
-            if (hour >= 0 && hour < 6) return costs.LOW;
-            if (hour >= 17 && hour < 21) return costs.HIGH;
-            return costs.MEDIUM;
+        function getFeesWithVAT(hour) {
+            const tariffs = CONFIG.GRID_TARIFFS[state.region];
+            const fixed = CONFIG.FIXED_FEES;
+            let distributionTariff;
+            if (hour >= 0 && hour < 6) distributionTariff = tariffs.LOW;
+            else if (hour >= 17 && hour < 21) distributionTariff = tariffs.HIGH;
+            else distributionTariff = tariffs.MEDIUM;
+            
+            return (distributionTariff + fixed.transmission + fixed.system + fixed.elafgift) * CONFIG.VAT;
+        }
+
+        function calculateTotalPrice(spotBeforeVAT, hour) {
+            const tariffs = CONFIG.GRID_TARIFFS[state.region];
+            const fixed = CONFIG.FIXED_FEES;
+            let distributionTariff;
+            if (hour >= 0 && hour < 6) distributionTariff = tariffs.LOW;
+            else if (hour >= 17 && hour < 21) distributionTariff = tariffs.HIGH;
+            else distributionTariff = tariffs.MEDIUM;
+            
+            const totalBeforeVAT = spotBeforeVAT + distributionTariff + fixed.transmission + fixed.system + fixed.elafgift;
+            return totalBeforeVAT * CONFIG.VAT;
         }
 
         async function fetchPrices() {
@@ -96,7 +115,8 @@
                 const start = new Date(now); start.setHours(0,0,0,0);
                 const end = new Date(start); end.setDate(end.getDate() + 2);
                 
-                const url = `${CONFIG.API_BASE}/${CONFIG.DATASET}?start=${start.toISOString().split('T')[0]}&end=${end.toISOString().split('T')[0]}&filter={"PriceArea":["${state.region}"]}&sort=TimeUTC asc`;
+                const filter = encodeURIComponent(JSON.stringify({ PriceArea: state.region }));
+                const url = `${CONFIG.API_BASE}?start=${start.toISOString().split('T')[0]}&end=${end.toISOString().split('T')[0]}&filter=${filter}&sort=HourDK%20asc`;
                 const res = await fetch(url);
                 const data = await res.json();
                 
@@ -112,11 +132,14 @@
             const todayEnd = new Date(todayStart); todayEnd.setDate(todayEnd.getDate() + 1);
             
             state.prices = records.map(r => {
-                const time = new Date(r.HourUTC || r.TimeUTC);
-                const spot = (r.SpotPriceDKK ?? r.PriceEUR * 7.45) / CONFIG.MWH_TO_KWH;
+                const time = new Date(r.HourDK);
+                const spotDKK = r.SpotPriceDKK !== null ? r.SpotPriceDKK : (r.SpotPriceEUR * 7.45);
+                const spotBeforeVAT = spotDKK / CONFIG.MWH_TO_KWH;
                 const hour = time.getHours();
-                const grid = getGridCost(hour);
-                return { time, hour, spot, grid, total: spot + grid };
+                const spotWithVAT = spotBeforeVAT * CONFIG.VAT;
+                const fees = getFeesWithVAT(hour);
+                const total = calculateTotalPrice(spotBeforeVAT, hour);
+                return { time, hour, spot: spotWithVAT, grid: fees, total };
             }).filter(p => p.time >= todayStart && p.time < todayEnd);
             
             updateDisplay();

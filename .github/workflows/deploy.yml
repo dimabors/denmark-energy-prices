@@ -45,7 +45,7 @@ jobs:
         run: |
           mkdir -p _site/.well-known
           cp -r index.html styles.css app.js sw.js manifest.json widget.html widget.js icons config README.md _site/
-          cp electricity.html diesel.html benzin.html gas.html water.html fjernvarme.html _site/
+          cp electricity.html electricity-dk1.html electricity-dk2.html diesel.html benzin.html gas.html water.html fjernvarme.html _site/
           cp -r .well-known/* _site/.well-known/
           # Don't copy unnecessary files
           rm -f _site/icons/generate-icons.html 2>/dev/null || true

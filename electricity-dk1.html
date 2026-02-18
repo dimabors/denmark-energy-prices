@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta property="og:title" content="DK1 West - Electricity Price">
+    <meta property="og:description" content="Live electricity prices for West Denmark (DK1)">
+    <title>⚡ DK1 West - Electricity Price</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { padding: 16px; }
+        .standalone-card { max-width: 500px; margin: 0 auto; }
+        .chart-container { height: 250px; margin-top: 16px; }
+        .region-badge { background: #4ade80; color: #1a1a2e; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-left: auto; }
+        .last-update { text-align: center; color: #666; font-size: 12px; margin-top: 12px; }
+        .error-msg { color: #f87171; text-align: center; padding: 20px; }
+        .loading { color: #a0a0b8; text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="standalone-card">
+        <section class="price-card electricity-card">
+            <div class="card-header">
+                <span class="card-icon">⚡</span>
+                <span class="card-title">Electricity</span>
+                <span class="region-badge">DK1 West</span>
+            </div>
+            <div class="card-subtitle">Spot price + Grid costs (incl. nettarif)</div>
+            <div class="current-price">
+                <span class="price-value" id="elec-price">--</span>
+                <span class="price-unit">DKK/kWh</span>
+            </div>
+            <div class="price-breakdown">
+                <span class="breakdown-item">Spot: <span id="spot-price">--</span></span>
+                <span class="breakdown-item">Grid: <span id="grid-cost">--</span></span>
+            </div>
+            <div class="price-details">
+                <div class="detail-item">
+                    <span class="detail-label">Min</span>
+                    <span class="detail-value" id="elec-min">--</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Max</span>
+                    <span class="detail-value" id="elec-max">--</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Avg</span>
+                    <span class="detail-value" id="elec-avg">--</span>
+                </div>
+            </div>
+            <div id="status" class="loading">Loading prices...</div>
+        </section>
+        <div class="chart-container">
+            <canvas id="priceChart"></canvas>
+        </div>
+        <div class="last-update" id="last-updated"></div>
+    </div>
+
+    <script>
+        const REGION = 'DK1';
+        const VAT = 1.25;
+        // 2025/2026 rates for DK1 (N1/Konstant area) - DKK/kWh without VAT
+        const GRID_TARIFFS = { LOW: 0.1536, MEDIUM: 0.4098, HIGH: 0.9821 };
+        const FIXED_FEES = { transmission: 0.049, system: 0.054, elafgift: 0.00872 };
+        const API_BASE = 'https://api.energidataservice.dk/dataset/Elspotprices';
+        
+        let prices = [];
+        let chart = null;
+
+        function getFeesWithVAT(hour) {
+            let distributionTariff;
+            if (hour >= 0 && hour < 6) distributionTariff = GRID_TARIFFS.LOW;
+            else if (hour >= 17 && hour < 21) distributionTariff = GRID_TARIFFS.HIGH;
+            else distributionTariff = GRID_TARIFFS.MEDIUM;
+            
+            const totalFees = distributionTariff + FIXED_FEES.transmission + FIXED_FEES.system + FIXED_FEES.elafgift;
+            return totalFees * VAT;
+        }
+
+        function calculateTotalPrice(spotBeforeVAT, hour) {
+            let distributionTariff;
+            if (hour >= 0 && hour < 6) distributionTariff = GRID_TARIFFS.LOW;
+            else if (hour >= 17 && hour < 21) distributionTariff = GRID_TARIFFS.HIGH;
+            else distributionTariff = GRID_TARIFFS.MEDIUM;
+            
+            const totalBeforeVAT = spotBeforeVAT + distributionTariff + FIXED_FEES.transmission + FIXED_FEES.system + FIXED_FEES.elafgift;
+            return totalBeforeVAT * VAT;
+        }
+
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        async function fetchPrices() {
+            const statusEl = document.getElementById('status');
+            try {
+                const now = new Date();
+                const start = new Date(now);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(start);
+                end.setDate(end.getDate() + 2);
+                
+                const filter = encodeURIComponent(JSON.stringify({ PriceArea: REGION }));
+                const url = `${API_BASE}?start=${formatDate(start)}&end=${formatDate(end)}&filter=${filter}&sort=HourDK%20asc`;
+                
+                console.log('Fetching:', url);
+                const res = await fetch(url);
+                
+                if (!res.ok) {
+                    throw new Error(`API error: ${res.status}`);
+                }
+                
+                const data = await res.json();
+                console.log('API response:', data);
+                
+                if (!data.records || data.records.length === 0) {
+                    statusEl.textContent = 'No price data available';
+                    statusEl.className = 'error-msg';
+                    return;
+                }
+                
+                statusEl.style.display = 'none';
+                processPrices(data.records);
+                
+            } catch (e) {
+                console.error('Fetch error:', e);
+                statusEl.textContent = 'Failed to load prices: ' + e.message;
+                statusEl.className = 'error-msg';
+            }
+        }
+
+        function processPrices(records) {
+            const now = new Date();
+            const todayStart = new Date(now);
+            todayStart.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(todayStart);
+            todayEnd.setDate(todayEnd.getDate() + 1);
+            
+            prices = records.map(r => {
+                const time = new Date(r.HourDK);
+                const spotDKK = r.SpotPriceDKK !== null ? r.SpotPriceDKK : (r.SpotPriceEUR * 7.45);
+                const spotBeforeVAT = spotDKK / 1000; // MWh to kWh (before VAT)
+                const hour = time.getHours();
+                const spotWithVAT = spotBeforeVAT * VAT;
+                const fees = getFeesWithVAT(hour);
+                const total = calculateTotalPrice(spotBeforeVAT, hour);
+                return { time, hour, spot: spotWithVAT, grid: fees, total };
+            }).filter(p => p.time >= todayStart && p.time < todayEnd);
+            
+            console.log('Processed prices:', prices);
+            
+            if (prices.length === 0) {
+                document.getElementById('status').textContent = 'No prices for today yet';
+                document.getElementById('status').style.display = 'block';
+                return;
+            }
+            
+            updateDisplay();
+            updateChart();
+        }
+
+        function updateDisplay() {
+            const now = new Date();
+            const current = prices.find(p => {
+                const pStart = p.time.getTime();
+                const pEnd = pStart + 3600000;
+                return now.getTime() >= pStart && now.getTime() < pEnd;
+            }) || prices[prices.length - 1];
+            
+            if (current) {
+                const el = document.getElementById('elec-price');
+                el.textContent = current.total.toFixed(2);
+                el.className = 'price-value ' + (current.total < 1.5 ? 'cheap' : current.total < 3 ? 'moderate' : 'expensive');
+                document.getElementById('spot-price').textContent = current.spot.toFixed(2);
+                document.getElementById('grid-cost').textContent = current.grid.toFixed(2);
+            }
+            
+            if (prices.length) {
+                const totals = prices.map(p => p.total);
+                document.getElementById('elec-min').textContent = Math.min(...totals).toFixed(2);
+                document.getElementById('elec-max').textContent = Math.max(...totals).toFixed(2);
+                document.getElementById('elec-avg').textContent = (totals.reduce((a, b) => a + b, 0) / totals.length).toFixed(2);
+            }
+            
+            document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            if (chart) chart.destroy();
+            
+            const now = new Date();
+            const currentHour = now.getHours();
+            
+            const colors = prices.map((p, i) => {
+                const baseColor = p.total < 1.5 ? '#4ade80' : p.total < 3 ? '#fbbf24' : '#f87171';
+                return p.hour === currentHour ? baseColor : baseColor + '80';
+            });
+            
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: prices.map(p => p.hour.toString().padStart(2, '0')),
+                    datasets: [
+                        { label: 'Spot', data: prices.map(p => p.spot), backgroundColor: colors, stack: 'price', borderRadius: 2 },
+                        { label: 'Grid', data: prices.map(p => p.grid), backgroundColor: 'rgba(128,128,128,0.5)', stack: 'price', borderRadius: 2 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { stacked: true, grid: { display: false }, ticks: { color: '#a0a0b8' } },
+                        y: { stacked: true, beginAtZero: true, ticks: { color: '#a0a0b8' } }
+                    }
+                }
+            });
+        }
+
+        // Initial fetch
+        fetchPrices();
+        
+        // Refresh every 5 minutes
+        setInterval(fetchPrices, 5 * 60 * 1000);
+    </script>
+</body>
+</html>
