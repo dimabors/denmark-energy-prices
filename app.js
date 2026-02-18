@@ -316,6 +316,7 @@ function processPriceData(records) {
     
     if (currentPriceEntry) {
         state.currentPrices = {
+            ...(state.currentPrices || {}),
             electricity: currentPriceEntry.priceDKK,
             spotPrice: currentPriceEntry.spotPriceDKK,
             gridCost: currentPriceEntry.gridCost,
@@ -356,6 +357,7 @@ function processPriceDataLegacy(records) {
     
     if (currentPriceEntry) {
         state.currentPrices = {
+            ...(state.currentPrices || {}),
             electricity: currentPriceEntry.priceDKK,
             spotPrice: currentPriceEntry.spotPriceDKK,
             gridCost: currentPriceEntry.gridCost,
@@ -408,7 +410,7 @@ async function fetchFuelPrices() {
         console.error('Failed to fetch OK fuel prices:', error);
         // Fallback to sample prices
         state.currentPrices = {
-            ...state.currentPrices,
+            ...(state.currentPrices || {}),
             benzin: 13.39,  // Fallback based on typical prices
             diesel: 12.69,
         };
