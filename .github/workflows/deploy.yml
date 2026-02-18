@@ -39,12 +39,12 @@ jobs:
       - name: Inject build number
         run: |
           sed -i "s/build 0/build ${{ github.run_number }}/g" index.html
-          sed -i "s/dk-energy-prices-v4/dk-energy-prices-v4-b${{ github.run_number }}/g" sw.js
+          sed -i "s/dk-energy-prices-v5/dk-energy-prices-v5-b${{ github.run_number }}/g" sw.js
 
       - name: Create artifact directory
         run: |
           mkdir -p _site
-          cp -r index.html styles.css app.js sw.js manifest.json icons README.md _site/
+          cp -r index.html styles.css app.js sw.js manifest.json icons config README.md _site/
           # Don't copy unnecessary files
           rm -f _site/icons/generate-icons.html 2>/dev/null || true
 

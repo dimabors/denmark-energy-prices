@@ -261,6 +261,11 @@ body {
     margin-bottom: 0;
 }
 
+.small-card.full-width {
+    flex: 1 1 100%;
+    max-width: 100%;
+}
+
 /* Chart Section */
 .chart-section {
     background: var(--bg-card);

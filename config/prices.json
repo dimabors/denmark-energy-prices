@@ -1,0 +1,30 @@
+{
+  "lastUpdated": "2026-02-18",
+  "fjernvarme": {
+    "egedal": {
+      "name": "Egedal Fjernvarme",
+      "source": "https://www.egedalfjernvarme.dk/priser/",
+      "pdfUrl": "https://www.egedalfjernvarme.dk/media/lusn3u05/takstblad-2026.pdf",
+      "year": 2026,
+      "prices": {
+        "variablePris": 485.00,
+        "unit": "DKK/MWh",
+        "note": "Variable energipris inkl. moms"
+      }
+    }
+  },
+  "gas": {
+    "evida": {
+      "name": "Evida",
+      "price": 8.95,
+      "unit": "DKK/m³"
+    }
+  },
+  "water": {
+    "novafos": {
+      "name": "Novafos",
+      "price": 56.25,
+      "unit": "DKK/m³"
+    }
+  }
+}

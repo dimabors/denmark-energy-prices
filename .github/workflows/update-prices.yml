@@ -1,0 +1,51 @@
+# GitHub Actions workflow to update utility prices
+name: Update Prices
+
+on:
+  # Run weekly on Mondays at 6:00 AM UTC
+  schedule:
+    - cron: '0 6 * * 1'
+  
+  # Run on first day of each month
+  schedule:
+    - cron: '0 6 1 * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pdfplumber
+
+      - name: Update prices from sources
+        run: |
+          python scripts/update-prices.py
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git diff --quiet config/prices.json || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit and push changes
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add config/prices.json
+          git commit -m "Auto-update utility prices [skip ci]"
+          git push

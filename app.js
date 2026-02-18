@@ -32,13 +32,19 @@ const CONFIG = {
         }
     },
     
-    // Static prices (water and gas don't have real-time APIs)
+    // Static prices (water, gas, fjernvarme don't have real-time APIs)
+    // These can be auto-updated via config/prices.json
     STATIC_PRICES: {
         // Novafos water prices 2026 (DKK/m³ including VAT)
         water: 56.25, // Drikkevand + spildevand + afgifter
         // Evida/Andel gas price (DKK/m³)
         gas: 8.95,
-    }
+        // Egedal Fjernvarme 2026 (DKK/MWh)
+        fjernvarme: 485.00,
+    },
+    
+    // Config file URL for auto-updated prices
+    PRICES_CONFIG_URL: './config/prices.json',
 };
 
 // State
@@ -67,6 +73,7 @@ const elements = {
     dieselPrice: document.getElementById('diesel-price'),
     gasPrice: document.getElementById('gas-price'),
     waterPrice: document.getElementById('water-price'),
+    fjernvarmePrice: document.getElementById('fjernvarme-price'),
     lastUpdatedText: document.getElementById('last-updated-text'),
     refreshBtn: document.getElementById('refresh-btn'),
     dk1Btn: document.getElementById('dk1-btn'),
@@ -376,10 +383,43 @@ async function fetchFuelPrices() {
         state.currentPrices = {};
     }
     
-    // Set static prices for gas and water (no real-time APIs available)
-    state.currentPrices.gas = CONFIG.STATIC_PRICES.gas;
-    state.currentPrices.water = CONFIG.STATIC_PRICES.water;
-    console.log('Static prices set:', { gas: state.currentPrices.gas, water: state.currentPrices.water });
+    // Try to load prices from config file (auto-updated via GitHub Actions)
+    try {
+        const configResponse = await fetch(CONFIG.PRICES_CONFIG_URL);
+        if (configResponse.ok) {
+            const configData = await configResponse.json();
+            
+            // Load fjernvarme price
+            if (configData.fjernvarme?.egedal?.prices?.variablePris) {
+                state.currentPrices.fjernvarme = configData.fjernvarme.egedal.prices.variablePris;
+            }
+            
+            // Load gas price
+            if (configData.gas?.evida?.price) {
+                state.currentPrices.gas = configData.gas.evida.price;
+            }
+            
+            // Load water price
+            if (configData.water?.novafos?.price) {
+                state.currentPrices.water = configData.water.novafos.price;
+            }
+            
+            console.log('Loaded prices from config:', configData.lastUpdated);
+        }
+    } catch (error) {
+        console.log('Config file not available, using defaults');
+    }
+    
+    // Set static prices as fallback (if not loaded from config)
+    if (!state.currentPrices.gas) state.currentPrices.gas = CONFIG.STATIC_PRICES.gas;
+    if (!state.currentPrices.water) state.currentPrices.water = CONFIG.STATIC_PRICES.water;
+    if (!state.currentPrices.fjernvarme) state.currentPrices.fjernvarme = CONFIG.STATIC_PRICES.fjernvarme;
+    
+    console.log('Static prices set:', { 
+        gas: state.currentPrices.gas, 
+        water: state.currentPrices.water,
+        fjernvarme: state.currentPrices.fjernvarme 
+    });
     
     // Fetch fuel prices from OK API
     try {
@@ -482,6 +522,9 @@ function updateFuelDisplay() {
     }
     if (state.currentPrices.water) {
         elements.waterPrice.textContent = state.currentPrices.water.toFixed(2);
+    }
+    if (state.currentPrices.fjernvarme && elements.fjernvarmePrice) {
+        elements.fjernvarmePrice.textContent = state.currentPrices.fjernvarme.toFixed(0);
     }
 }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dk-energy-prices-v4';
+const CACHE_NAME = 'dk-energy-prices-v5';
 const BASE_PATH = '/denmark-energy-prices';
 const STATIC_ASSETS = [
     `${BASE_PATH}/`,
@@ -6,6 +6,7 @@ const STATIC_ASSETS = [
     `${BASE_PATH}/styles.css`,
     `${BASE_PATH}/app.js`,
     `${BASE_PATH}/manifest.json`,
+    `${BASE_PATH}/config/prices.json`,
     `${BASE_PATH}/icons/icon-192.png`,
     `${BASE_PATH}/icons/icon-512.png`,
     'https://cdn.jsdelivr.net/npm/chart.js'
