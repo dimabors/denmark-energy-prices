@@ -64,7 +64,9 @@
         // 2025/2026 rates for DK2 (Radius/Copenhagen area) - DKK/kWh without VAT
         const GRID_TARIFFS = { LOW: 0.1863, MEDIUM: 0.5477, HIGH: 1.3520 };
         const FIXED_FEES = { transmission: 0.049, system: 0.054, elafgift: 0.00872 };
-        const API_BASE = 'https://api.energidataservice.dk/dataset/Elspotprices';
+        const API_BASE = 'https://api.energidataservice.dk/dataset';
+        const DATASET_NEW = 'DayAheadPrices';
+        const DATASET_OLD = 'Elspotprices';
         
         let prices = [];
         let chart = null;
@@ -101,38 +103,53 @@
                 start.setHours(0, 0, 0, 0);
                 const end = new Date(start);
                 end.setDate(end.getDate() + 2);
+                const startStr = formatDate(start);
+                const endStr = formatDate(end);
                 
-                const filter = encodeURIComponent(JSON.stringify({ PriceArea: REGION }));
-                let url = `${API_BASE}?start=${formatDate(start)}&end=${formatDate(end)}&filter=${filter}&sort=HourDK%20asc`;
+                let records = null;
+                let source = 'new';
                 
-                console.log('Fetching:', url);
-                let res = await fetch(url);
-                
-                if (!res.ok) {
-                    throw new Error(`API error: ${res.status}`);
-                }
-                
-                let data = await res.json();
-                console.log('API response:', data);
-                
-                // If no data for today, fetch latest available
-                if (!data.records || data.records.length === 0) {
-                    url = `${API_BASE}?limit=48&filter=${filter}&sort=HourDK%20desc`;
-                    res = await fetch(url);
-                    data = await res.json();
-                    if (data.records?.length) {
-                        data.records.reverse();
+                // Try new DayAheadPrices dataset first (Oct 2025+)
+                try {
+                    const filterArr = encodeURIComponent(JSON.stringify({ PriceArea: [REGION] }));
+                    let url = `${API_BASE}/${DATASET_NEW}?start=${startStr}&end=${endStr}&filter=${filterArr}&sort=TimeDK%20asc&limit=0`;
+                    let res = await fetch(url);
+                    let data = await res.json();
+                    
+                    if (!data.records?.length) {
+                        url = `${API_BASE}/${DATASET_NEW}?limit=200&filter=${filterArr}&sort=TimeDK%20desc`;
+                        res = await fetch(url);
+                        data = await res.json();
+                        if (data.records?.length) data.records.reverse();
                     }
+                    if (data.records?.length) records = data.records;
+                } catch (e) { console.log('DayAheadPrices failed:', e); }
+                
+                // Fallback to Elspotprices
+                if (!records) {
+                    source = 'old';
+                    const filter = encodeURIComponent(JSON.stringify({ PriceArea: REGION }));
+                    let url = `${API_BASE}/${DATASET_OLD}?start=${startStr}&end=${endStr}&filter=${filter}&sort=HourDK%20asc`;
+                    let res = await fetch(url);
+                    let data = await res.json();
+                    
+                    if (!data.records?.length) {
+                        url = `${API_BASE}/${DATASET_OLD}?limit=48&filter=${filter}&sort=HourDK%20desc`;
+                        res = await fetch(url);
+                        data = await res.json();
+                        if (data.records?.length) data.records.reverse();
+                    }
+                    if (data.records?.length) records = data.records;
                 }
                 
-                if (!data.records || data.records.length === 0) {
+                if (!records?.length) {
                     statusEl.textContent = 'No price data available';
                     statusEl.className = 'error-msg';
                     return;
                 }
                 
                 statusEl.style.display = 'none';
-                processPrices(data.records);
+                processPrices(records, source);
                 
             } catch (e) {
                 console.error('Fetch error:', e);
@@ -141,18 +158,35 @@
             }
         }
 
-        function processPrices(records) {
-            // Process all records - date filtering already done by API query
-            prices = records.map(r => {
-                const time = new Date(r.HourDK);
-                const spotDKK = r.SpotPriceDKK !== null ? r.SpotPriceDKK : (r.SpotPriceEUR * 7.45);
-                const spotBeforeVAT = spotDKK / 1000; // MWh to kWh (before VAT)
+        function processPrices(records, source) {
+            const allPrices = records.map(r => {
+                const time = new Date(source === 'new' ? r.TimeDK : r.HourDK);
+                const spotMWh = source === 'new'
+                    ? r.DayAheadPriceDKK
+                    : (r.SpotPriceDKK !== null ? r.SpotPriceDKK : r.SpotPriceEUR * 7.45);
+                const spotBeforeVAT = spotMWh / 1000;
                 const hour = time.getHours();
                 const spotWithVAT = spotBeforeVAT * VAT;
                 const fees = getFeesWithVAT(hour);
                 const total = calculateTotalPrice(spotBeforeVAT, hour);
                 return { time, hour, spot: spotWithVAT, grid: fees, total };
-            }).slice(-24); // Keep latest 24 hours
+            });
+            
+            // For DayAheadPrices (15-min intervals), group by hour
+            if (source === 'new') {
+                const hourMap = new Map();
+                allPrices.forEach(p => {
+                    const key = p.time.toISOString().slice(0, 13);
+                    if (!hourMap.has(key)) hourMap.set(key, { items: [], hour: p.hour });
+                    hourMap.get(key).items.push(p);
+                });
+                prices = Array.from(hourMap.values()).map(g => {
+                    const avg = (arr, fn) => arr.reduce((s, i) => s + fn(i), 0) / arr.length;
+                    return { time: g.items[0].time, hour: g.hour, spot: avg(g.items, i => i.spot), grid: g.items[0].grid, total: avg(g.items, i => i.total) };
+                }).slice(-24);
+            } else {
+                prices = allPrices.slice(-24);
+            }
             
             console.log('Processed prices:', prices);
             

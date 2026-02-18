@@ -30,12 +30,25 @@
 
     <script>
         const API_URL = 'https://mobility-prices.ok.dk/api/v1/fuel-prices';
+        const CORS_PROXY = 'https://corsproxy.io/?url=';
         const FACILITY = 27;
+        
+        async function fetchWithFallback(url) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Direct fetch failed');
+                return await res.json();
+            } catch (e) {
+                console.log('Direct fetch failed, trying CORS proxy...');
+                const proxyRes = await fetch(CORS_PROXY + encodeURIComponent(url));
+                if (!proxyRes.ok) throw new Error('Proxy fetch also failed');
+                return await proxyRes.json();
+            }
+        }
         
         async function fetchPrice() {
             try {
-                const res = await fetch(API_URL);
-                const data = await res.json();
+                const data = await fetchWithFallback(API_URL);
                 const facility = data.items?.find(f => f.facility_number === FACILITY) || data.items?.[0];
                 
                 if (facility?.prices) {
@@ -46,7 +59,7 @@
                 }
                 document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString('da-DK', {hour:'2-digit', minute:'2-digit'});
             } catch (e) {
-                console.error(e);
+                console.error('Failed to fetch benzin price:', e);
                 document.getElementById('benzin-price').textContent = '--';
             }
         }

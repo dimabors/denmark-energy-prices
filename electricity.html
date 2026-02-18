@@ -63,7 +63,9 @@
 
     <script>
         const CONFIG = {
-            API_BASE: 'https://api.energidataservice.dk/dataset/Elspotprices',
+            API_BASE: 'https://api.energidataservice.dk/dataset',
+            DATASET_NEW: 'DayAheadPrices',
+            DATASET_OLD: 'Elspotprices',
             MWH_TO_KWH: 1000,
             VAT: 1.25,
             // Fixed fees (DKK/kWh without VAT)
@@ -122,25 +124,53 @@
                 const now = new Date();
                 const start = new Date(now); start.setHours(0,0,0,0);
                 const end = new Date(start); end.setDate(end.getDate() + 2);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = end.toISOString().split('T')[0];
+                const filterArr = encodeURIComponent(JSON.stringify({ PriceArea: [state.region] }));
+                const filterStr = encodeURIComponent(JSON.stringify({ PriceArea: state.region }));
                 
-                const filter = encodeURIComponent(JSON.stringify({ PriceArea: state.region }));
-                let url = `${CONFIG.API_BASE}?start=${start.toISOString().split('T')[0]}&end=${end.toISOString().split('T')[0]}&filter=${filter}&sort=HourDK%20asc`;
-                let res = await fetch(url);
-                let data = await res.json();
+                let records = null;
+                let source = 'new';
                 
-                // If no data for today, fetch latest available
-                if (!data.records?.length) {
-                    url = `${CONFIG.API_BASE}?limit=48&filter=${filter}&sort=HourDK%20desc`;
-                    res = await fetch(url);
-                    data = await res.json();
-                    if (data.records?.length) {
-                        data.records.reverse();
+                // Try new DayAheadPrices dataset first (has data from Oct 2025+)
+                try {
+                    let url = `${CONFIG.API_BASE}/${CONFIG.DATASET_NEW}?start=${startStr}&end=${endStr}&filter=${filterArr}&sort=TimeDK%20asc&limit=0`;
+                    let res = await fetch(url);
+                    let data = await res.json();
+                    
+                    if (!data.records?.length) {
+                        // Fallback: latest available from new dataset
+                        url = `${CONFIG.API_BASE}/${CONFIG.DATASET_NEW}?limit=200&filter=${filterArr}&sort=TimeDK%20desc`;
+                        res = await fetch(url);
+                        data = await res.json();
+                        if (data.records?.length) data.records.reverse();
                     }
+                    
+                    if (data.records?.length) records = data.records;
+                } catch (e) {
+                    console.log('DayAheadPrices failed, trying Elspotprices...');
                 }
                 
-                if (data.records?.length) {
+                // Fallback to old Elspotprices dataset
+                if (!records) {
+                    source = 'old';
+                    let url = `${CONFIG.API_BASE}/${CONFIG.DATASET_OLD}?start=${startStr}&end=${endStr}&filter=${filterStr}&sort=HourDK%20asc`;
+                    let res = await fetch(url);
+                    let data = await res.json();
+                    
+                    if (!data.records?.length) {
+                        url = `${CONFIG.API_BASE}/${CONFIG.DATASET_OLD}?limit=48&filter=${filterStr}&sort=HourDK%20desc`;
+                        res = await fetch(url);
+                        data = await res.json();
+                        if (data.records?.length) data.records.reverse();
+                    }
+                    
+                    if (data.records?.length) records = data.records;
+                }
+                
+                if (records?.length) {
                     statusEl.style.display = 'none';
-                    processPrices(data.records);
+                    processPrices(records, source);
                 } else {
                     statusEl.textContent = 'No price data available';
                     statusEl.className = 'error-msg';
@@ -152,18 +182,44 @@
             }
         }
 
-        function processPrices(records) {
-            // Process all records - date filtering already done by API query
-            state.prices = records.map(r => {
-                const time = new Date(r.HourDK);
-                const spotDKK = r.SpotPriceDKK !== null ? r.SpotPriceDKK : (r.SpotPriceEUR * 7.45);
-                const spotBeforeVAT = spotDKK / CONFIG.MWH_TO_KWH;
+        function processPrices(records, source) {
+            const allPrices = records.map(r => {
+                const time = new Date(source === 'new' ? r.TimeDK : r.HourDK);
+                const spotMWh = source === 'new' 
+                    ? r.DayAheadPriceDKK 
+                    : (r.SpotPriceDKK !== null ? r.SpotPriceDKK : r.SpotPriceEUR * 7.45);
+                const spotBeforeVAT = spotMWh / CONFIG.MWH_TO_KWH;
                 const hour = time.getHours();
                 const spotWithVAT = spotBeforeVAT * CONFIG.VAT;
                 const fees = getFeesWithVAT(hour);
                 const total = calculateTotalPrice(spotBeforeVAT, hour);
                 return { time, hour, spot: spotWithVAT, grid: fees, total };
-            }).slice(-24); // Keep latest 24 hours
+            });
+            
+            // For DayAheadPrices (15-min intervals), group by hour and average
+            if (source === 'new') {
+                const hourMap = new Map();
+                allPrices.forEach(p => {
+                    const hourKey = p.time.toISOString().slice(0, 13); // YYYY-MM-DDTHH
+                    if (!hourMap.has(hourKey)) {
+                        hourMap.set(hourKey, { items: [], hour: p.hour });
+                    }
+                    hourMap.get(hourKey).items.push(p);
+                });
+                
+                state.prices = Array.from(hourMap.values()).map(group => {
+                    const avg = (arr, fn) => arr.reduce((s, i) => s + fn(i), 0) / arr.length;
+                    return {
+                        time: group.items[0].time,
+                        hour: group.hour,
+                        spot: avg(group.items, i => i.spot),
+                        grid: group.items[0].grid,
+                        total: avg(group.items, i => i.total),
+                    };
+                }).slice(-24);
+            } else {
+                state.prices = allPrices.slice(-24);
+            }
             
             updateDisplay();
             updateChart();

@@ -475,12 +475,20 @@ async function fetchFuelPrices() {
         fjernvarme: state.currentPrices.fjernvarme 
     });
     
-    // Fetch fuel prices from OK API
+    // Fetch fuel prices from OK API (with CORS proxy fallback)
     try {
-        const response = await fetch(CONFIG.FUEL_API_BASE);
-        if (!response.ok) throw new Error('OK API request failed');
-        
-        const data = await response.json();
+        let data;
+        try {
+            const response = await fetch(CONFIG.FUEL_API_BASE);
+            if (!response.ok) throw new Error('Direct fetch failed');
+            data = await response.json();
+        } catch (directError) {
+            console.log('Direct OK API failed, trying CORS proxy...', directError.message);
+            const proxyUrl = 'https://corsproxy.io/?url=' + encodeURIComponent(CONFIG.FUEL_API_BASE);
+            const proxyResponse = await fetch(proxyUrl);
+            if (!proxyResponse.ok) throw new Error('Proxy fetch also failed');
+            data = await proxyResponse.json();
+        }
         
         // Find facility 27 or use first available
         const facility = data.items?.find(f => f.facility_number === CONFIG.OK_FACILITY_NUMBER) 
