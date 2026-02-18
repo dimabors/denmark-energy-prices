@@ -103,17 +103,27 @@
                 end.setDate(end.getDate() + 2);
                 
                 const filter = encodeURIComponent(JSON.stringify({ PriceArea: REGION }));
-                const url = `${API_BASE}?start=${formatDate(start)}&end=${formatDate(end)}&filter=${filter}&sort=HourDK%20asc`;
+                let url = `${API_BASE}?start=${formatDate(start)}&end=${formatDate(end)}&filter=${filter}&sort=HourDK%20asc`;
                 
                 console.log('Fetching:', url);
-                const res = await fetch(url);
+                let res = await fetch(url);
                 
                 if (!res.ok) {
                     throw new Error(`API error: ${res.status}`);
                 }
                 
-                const data = await res.json();
+                let data = await res.json();
                 console.log('API response:', data);
+                
+                // If no data for today, fetch latest available
+                if (!data.records || data.records.length === 0) {
+                    url = `${API_BASE}?limit=48&filter=${filter}&sort=HourDK%20desc`;
+                    res = await fetch(url);
+                    data = await res.json();
+                    if (data.records?.length) {
+                        data.records.reverse();
+                    }
+                }
                 
                 if (!data.records || data.records.length === 0) {
                     statusEl.textContent = 'No price data available';
@@ -132,12 +142,7 @@
         }
 
         function processPrices(records) {
-            const now = new Date();
-            const todayStart = new Date(now);
-            todayStart.setHours(0, 0, 0, 0);
-            const todayEnd = new Date(todayStart);
-            todayEnd.setDate(todayEnd.getDate() + 1);
-            
+            // Process all records - date filtering already done by API query
             prices = records.map(r => {
                 const time = new Date(r.HourDK);
                 const spotDKK = r.SpotPriceDKK !== null ? r.SpotPriceDKK : (r.SpotPriceEUR * 7.45);
@@ -147,7 +152,7 @@
                 const fees = getFeesWithVAT(hour);
                 const total = calculateTotalPrice(spotBeforeVAT, hour);
                 return { time, hour, spot: spotWithVAT, grid: fees, total };
-            }).filter(p => p.time >= todayStart && p.time < todayEnd);
+            }).slice(-24); // Keep latest 24 hours
             
             console.log('Processed prices:', prices);
             

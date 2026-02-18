@@ -187,7 +187,7 @@ async function fetchElectricityPrices() {
     tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
     
     // Fetch today and tomorrow prices
-    const url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
+    let url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
         `start=${formatDateParam(todayStart)}&` +
         `end=${formatDateParam(tomorrowEnd)}&` +
         `filter={"PriceArea":["${state.region}"]}&` +
@@ -195,13 +195,28 @@ async function fetchElectricityPrices() {
         `limit=0`;
     
     try {
-        const response = await fetch(url);
+        let response = await fetch(url);
         if (!response.ok) throw new Error('API request failed');
         
-        const data = await response.json();
+        let data = await response.json();
+        
+        // If no data for today, fetch latest available
+        if (!data.records || data.records.length === 0) {
+            url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
+                `filter={"PriceArea":["${state.region}"]}&` +
+                `sort=TimeUTC desc&limit=48`;
+            response = await fetch(url);
+            data = await response.json();
+            if (data.records?.length) {
+                data.records.reverse();
+            }
+        }
         
         if (data.records && data.records.length > 0) {
             processPriceData(data.records);
+        } else {
+            // Fallback to legacy dataset
+            await fetchElectricityPricesLegacy();
         }
     } catch (error) {
         console.error('Failed to fetch electricity prices:', error);
@@ -332,11 +347,6 @@ function calculateTotalPrice(spotPriceBeforeVAT, time, region) {
 
 function processPriceData(records) {
     const now = new Date();
-    const todayMidnight = new Date(now);
-    todayMidnight.setHours(0, 0, 0, 0);
-    
-    const tomorrowMidnight = new Date(todayMidnight);
-    tomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
     
     const allPrices = records.map(record => {
         const time = new Date(record.TimeUTC || record.TimeDK);
@@ -354,15 +364,17 @@ function processPriceData(records) {
         };
     });
     
-    state.todayPrices = allPrices.filter(p => p.time >= todayMidnight && p.time < tomorrowMidnight);
-    state.tomorrowPrices = allPrices.filter(p => p.time >= tomorrowMidnight);
+    // Use the data we have - take latest 24 and next 24 hours
+    // This handles both current data and fallback historical data
+    state.todayPrices = allPrices.slice(0, 24);
+    state.tomorrowPrices = allPrices.slice(24, 48);
     
-    // Get current price (closest to now)
+    // Get current price (closest to now, or latest if showing historical)
     const currentPriceEntry = allPrices.find(p => {
         const pTime = p.time.getTime();
         const nowTime = now.getTime();
         return pTime <= nowTime && (pTime + 15 * 60 * 1000) > nowTime;
-    }) || allPrices[0];
+    }) || allPrices[allPrices.length - 1] || allPrices[0];
     
     if (currentPriceEntry) {
         state.currentPrices = {
@@ -377,11 +389,6 @@ function processPriceData(records) {
 
 function processPriceDataLegacy(records) {
     const now = new Date();
-    const todayMidnight = new Date(now);
-    todayMidnight.setHours(0, 0, 0, 0);
-    
-    const tomorrowMidnight = new Date(todayMidnight);
-    tomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
     
     const allPrices = records.map(record => {
         const time = new Date(record.HourUTC || record.HourDK);
@@ -399,14 +406,15 @@ function processPriceDataLegacy(records) {
         };
     });
     
-    state.todayPrices = allPrices.filter(p => p.time >= todayMidnight && p.time < tomorrowMidnight);
-    state.tomorrowPrices = allPrices.filter(p => p.time >= tomorrowMidnight);
+    // Use the data we have - take latest 24 and next 24 hours
+    state.todayPrices = allPrices.slice(0, 24);
+    state.tomorrowPrices = allPrices.slice(24, 48);
     
     const currentPriceEntry = allPrices.find(p => {
         const pTime = p.time.getTime();
         const nowTime = now.getTime();
         return pTime <= nowTime && (pTime + 60 * 60 * 1000) > nowTime;
-    }) || allPrices[0];
+    }) || allPrices[allPrices.length - 1] || allPrices[0];
     
     if (currentPriceEntry) {
         state.currentPrices = {

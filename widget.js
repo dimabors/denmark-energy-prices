@@ -48,16 +48,28 @@ async function fetchElectricityPrices() {
     const tomorrowEnd = new Date(todayStart);
     tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
     
-    const url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET}?` +
+    let url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET}?` +
         `start=${todayStart.toISOString().split('T')[0]}&` +
         `end=${tomorrowEnd.toISOString().split('T')[0]}&` +
         `filter={"PriceArea":["${CONFIG.REGION}"]}&` +
         `sort=TimeUTC asc&limit=0`;
     
-    const response = await fetch(url);
+    let response = await fetch(url);
     if (!response.ok) throw new Error('API failed');
     
-    const data = await response.json();
+    let data = await response.json();
+    
+    // If no data for today, fetch latest available
+    if (!data.records || data.records.length === 0) {
+        url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET}?` +
+            `filter={"PriceArea":["${CONFIG.REGION}"]}&` +
+            `sort=TimeUTC desc&limit=48`;
+        response = await fetch(url);
+        data = await response.json();
+        if (data.records?.length) {
+            data.records.reverse();
+        }
+    }
     
     if (data.records && data.records.length > 0) {
         processPriceData(data.records);
@@ -84,12 +96,8 @@ function calculateTotalPrice(spotBeforeVAT, hour) {
 
 function processPriceData(records) {
     const now = new Date();
-    const todayMidnight = new Date(now);
-    todayMidnight.setHours(0, 0, 0, 0);
     
-    const tomorrowMidnight = new Date(todayMidnight);
-    tomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
-    
+    // Process all records, take latest 24 hours (works for both current and fallback data)
     prices = records.map(record => {
         const time = new Date(record.HourUTC || record.TimeUTC);
         const spotBeforeVAT = (record.SpotPriceDKK ?? record.PriceEUR * 7.45) / CONFIG.MWH_TO_KWH;
@@ -105,14 +113,14 @@ function processPriceData(records) {
             gridCost: feesWithVAT,
             totalPrice,
         };
-    }).filter(p => p.time >= todayMidnight && p.time < tomorrowMidnight);
+    }).slice(-24); // Keep latest 24 hours
     
     // Update current price
     const currentPrice = prices.find(p => {
         const pTime = p.time.getTime();
         const nowTime = now.getTime();
         return pTime <= nowTime && (pTime + 60 * 60 * 1000) > nowTime;
-    }) || prices[0];
+    }) || prices[prices.length - 1] || prices[0];
     
     if (currentPrice) {
         updateCurrentPrice(currentPrice.totalPrice);

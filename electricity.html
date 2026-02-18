@@ -15,6 +15,8 @@
         .region-toggle button { padding: 8px 16px; border: none; border-radius: 8px; background: #2a2a4e; color: #a0a0b8; cursor: pointer; }
         .region-toggle button.active { background: #4ade80; color: #1a1a2e; }
         .last-update { text-align: center; color: #666; font-size: 12px; margin-top: 12px; }
+        .loading { color: #a0a0b8; text-align: center; padding: 20px; }
+        .error-msg { color: #f87171; text-align: center; padding: 20px; }
     </style>
 </head>
 <body>
@@ -51,6 +53,7 @@
                     <span class="detail-value" id="elec-avg">--</span>
                 </div>
             </div>
+            <div id="status" class="loading">Loading prices...</div>
         </section>
         <div class="chart-container">
             <canvas id="priceChart"></canvas>
@@ -110,27 +113,47 @@
         }
 
         async function fetchPrices() {
+            const statusEl = document.getElementById('status');
+            statusEl.style.display = 'block';
+            statusEl.className = 'loading';
+            statusEl.textContent = 'Loading prices...';
+            
             try {
                 const now = new Date();
                 const start = new Date(now); start.setHours(0,0,0,0);
                 const end = new Date(start); end.setDate(end.getDate() + 2);
                 
                 const filter = encodeURIComponent(JSON.stringify({ PriceArea: state.region }));
-                const url = `${CONFIG.API_BASE}?start=${start.toISOString().split('T')[0]}&end=${end.toISOString().split('T')[0]}&filter=${filter}&sort=HourDK%20asc`;
-                const res = await fetch(url);
-                const data = await res.json();
+                let url = `${CONFIG.API_BASE}?start=${start.toISOString().split('T')[0]}&end=${end.toISOString().split('T')[0]}&filter=${filter}&sort=HourDK%20asc`;
+                let res = await fetch(url);
+                let data = await res.json();
+                
+                // If no data for today, fetch latest available
+                if (!data.records?.length) {
+                    url = `${CONFIG.API_BASE}?limit=48&filter=${filter}&sort=HourDK%20desc`;
+                    res = await fetch(url);
+                    data = await res.json();
+                    if (data.records?.length) {
+                        data.records.reverse();
+                    }
+                }
                 
                 if (data.records?.length) {
+                    statusEl.style.display = 'none';
                     processPrices(data.records);
+                } else {
+                    statusEl.textContent = 'No price data available';
+                    statusEl.className = 'error-msg';
                 }
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Failed to load prices';
+                statusEl.className = 'error-msg';
+            }
         }
 
         function processPrices(records) {
-            const now = new Date();
-            const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
-            const todayEnd = new Date(todayStart); todayEnd.setDate(todayEnd.getDate() + 1);
-            
+            // Process all records - date filtering already done by API query
             state.prices = records.map(r => {
                 const time = new Date(r.HourDK);
                 const spotDKK = r.SpotPriceDKK !== null ? r.SpotPriceDKK : (r.SpotPriceEUR * 7.45);
@@ -140,7 +163,7 @@
                 const fees = getFeesWithVAT(hour);
                 const total = calculateTotalPrice(spotBeforeVAT, hour);
                 return { time, hour, spot: spotWithVAT, grid: fees, total };
-            }).filter(p => p.time >= todayStart && p.time < todayEnd);
+            }).slice(-24); // Keep latest 24 hours
             
             updateDisplay();
             updateChart();
