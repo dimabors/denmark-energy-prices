@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>Benzin 95 Price - Denmark</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body { padding: 16px; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .standalone-card { max-width: 300px; width: 100%; }
+        .last-update { text-align: center; color: #666; font-size: 12px; margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <div class="standalone-card">
+        <section class="price-card small-card">
+            <div class="card-header">
+                <span class="card-icon">⛽</span>
+                <span class="card-title">Benzin 95</span>
+            </div>
+            <div class="card-source">OK (Station 27)</div>
+            <div class="current-price">
+                <span class="price-value" id="benzin-price">--</span>
+                <span class="price-unit">DKK/L</span>
+            </div>
+        </section>
+        <div class="last-update" id="last-updated"></div>
+    </div>
+
+    <script>
+        const API_URL = 'https://mobility-prices.ok.dk/api/v1/fuel-prices';
+        const FACILITY = 27;
+        
+        async function fetchPrice() {
+            try {
+                const res = await fetch(API_URL);
+                const data = await res.json();
+                const facility = data.items?.find(f => f.facility_number === FACILITY) || data.items?.[0];
+                
+                if (facility?.prices) {
+                    const benzin = facility.prices.find(p => p.product_name === 'Blyfri 95');
+                    if (benzin) {
+                        document.getElementById('benzin-price').textContent = benzin.price.toFixed(2);
+                    }
+                }
+                document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString('da-DK', {hour:'2-digit', minute:'2-digit'});
+            } catch (e) {
+                console.error(e);
+                document.getElementById('benzin-price').textContent = '--';
+            }
+        }
+        
+        fetchPrice();
+        setInterval(fetchPrice, 5 * 60 * 1000);
+    </script>
+</body>
+</html>
