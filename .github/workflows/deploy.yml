@@ -43,8 +43,9 @@ jobs:
 
       - name: Create artifact directory
         run: |
-          mkdir -p _site
-          cp -r index.html styles.css app.js sw.js manifest.json icons config README.md _site/
+          mkdir -p _site/.well-known
+          cp -r index.html styles.css app.js sw.js manifest.json widget.html widget.js icons config README.md _site/
+          cp -r .well-known/* _site/.well-known/
           # Don't copy unnecessary files
           rm -f _site/icons/generate-icons.html 2>/dev/null || true
 

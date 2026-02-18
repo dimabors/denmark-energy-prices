@@ -1,0 +1,71 @@
+plugins {
+    id 'com.android.application'
+}
+
+def twaManifest = [
+    applicationId: 'dk.energyprices.twa',
+    hostName: 'dimabors.github.io',
+    launchUrl: '/denmark-energy-prices/',
+    name: 'DK Energy Prices',
+    shortName: 'Energy DK',
+    themeColor: '#1a1a2e',
+    navigationColor: '#16162b',
+    navigationColorDark: '#16162b',
+    navigationDividerColor: '#16162b',
+    navigationDividerColorDark: '#16162b',
+    backgroundColor: '#1a1a2e',
+    enableNotifications: false,
+    splashScreenFadeOutDuration: 300,
+    generatorApp: 'manual',
+    fallbackType: 'customtabs',
+    enableSiteSettingsShortcut: 'true',
+    orientation: 'portrait',
+]
+
+android {
+    compileSdk 34
+    namespace "dk.energyprices.twa"
+    
+    defaultConfig {
+        applicationId twaManifest.applicationId
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+
+        // TWA configuration
+        manifestPlaceholders = [
+            hostName: twaManifest.hostName,
+            defaultUrl: "https://${twaManifest.hostName}${twaManifest.launchUrl}",
+            launcherName: twaManifest.shortName,
+            assetStatements: '[{"relation": ["delegate_permission/common.handle_all_urls"], "target": {"namespace": "web", "site": "https://${twaManifest.hostName}"}}]',
+            themeColor: twaManifest.themeColor,
+            navigationColor: twaManifest.navigationColor,
+            navigationColorDark: twaManifest.navigationColorDark,
+            navigationDividerColor: twaManifest.navigationDividerColor,
+            navigationDividerColorDark: twaManifest.navigationDividerColorDark,
+            backgroundColor: twaManifest.backgroundColor,
+            splashScreenFadeOutDuration: twaManifest.splashScreenFadeOutDuration,
+            enableNotifications: twaManifest.enableNotifications,
+            fallbackType: twaManifest.fallbackType,
+            enableSiteSettingsShortcut: twaManifest.enableSiteSettingsShortcut,
+            orientation: twaManifest.orientation,
+        ]
+    }
+    
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
