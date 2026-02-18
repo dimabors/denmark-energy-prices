@@ -139,11 +139,13 @@ async function refreshAllData() {
     showLoading(true);
     
     try {
-        await Promise.all([
+        // Use allSettled to ensure all fetches complete even if some fail
+        await Promise.allSettled([
             fetchElectricityPrices(),
             fetchFuelPrices(),
         ]);
         
+        // Always update displays even if some data failed to load
         updateAllDisplays();
         saveToCache();
         
@@ -151,6 +153,8 @@ async function refreshAllData() {
         updateLastUpdatedText();
     } catch (error) {
         console.error('Failed to refresh data:', error);
+        // Still try to update displays with whatever data we have
+        updateAllDisplays();
     } finally {
         showLoading(false);
     }
@@ -373,6 +377,7 @@ async function fetchFuelPrices() {
     // Set static prices for gas and water (no real-time APIs available)
     state.currentPrices.gas = CONFIG.STATIC_PRICES.gas;
     state.currentPrices.water = CONFIG.STATIC_PRICES.water;
+    console.log('Static prices set:', { gas: state.currentPrices.gas, water: state.currentPrices.water });
     
     // Fetch fuel prices from OK API
     try {
