@@ -76,7 +76,9 @@ The total electricity price includes all components with 25% VAT:
 
 ### As a PWA (Recommended)
 
-1. Visit the deployed site: `https://dimabors.github.io/denmark-energy-prices/`
+1. Visit the deployed site:
+   - **Production**: `https://dimabors.github.io/denmark-energy-prices/`
+   - **Development**: `https://dimabors.github.io/denmark-energy-prices/dev/`
 2. On Android: Tap the "Add to Home Screen" prompt or menu option
 3. On iOS: Tap Share → "Add to Home Screen"
 
@@ -110,15 +112,17 @@ This project uses GitHub Actions to automatically deploy to GitHub Pages.
 ### Setup GitHub Pages
 
 1. Go to your repository Settings → Pages
-2. Under "Build and deployment", select "GitHub Actions"
-3. Push to the `main` branch to trigger deployment
+2. Under "Build and deployment", select **Deploy from a branch**
+3. Choose branch: `gh-pages` / `/ (root)` and click Save
+4. Push to `main` → deploys production to root (`/denmark-energy-prices/`)
+5. Push to `development` → deploys dev to subfolder (`/denmark-energy-prices/dev/`)
 
 ### GitHub Actions Workflows
 
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|
-| Deploy | `.github/workflows/deploy.yml` | Push to `main` | Build & deploy to GitHub Pages |
-| Deploy Dev | `.github/workflows/deploy-dev.yml` | Push to `development` | Build & deploy to dev-gh-pages environment |
+| Deploy | `.github/workflows/deploy.yml` | Push to `main` | Build & deploy production to `gh-pages` branch (root) |
+| Deploy Dev | `.github/workflows/deploy-dev.yml` | Push to `development` | Build & deploy dev to `gh-pages` branch (`/dev/` subfolder) |
 | Update Prices | `.github/workflows/update-prices.yml` | Weekly / Monthly / Manual | Fetch fjernvarme PDF & update config |
 | Release | `.github/workflows/release.yml` | Tag `v*` / Manual | Create GitHub Release with artifacts |
 

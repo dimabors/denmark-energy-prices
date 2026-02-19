@@ -1,64 +1,59 @@
-# GitHub Actions workflow to deploy development branch to GitHub Pages (dev environment)
+# GitHub Actions workflow to deploy development branch to GitHub Pages (dev subfolder)
 name: Deploy Dev to GitHub Pages
 
 on:
   push:
     branches: ["development"]
-
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Allow only one concurrent dev deployment, but don't cancel prod
 concurrency:
   group: "pages-dev"
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: dev-gh-pages
+      url: https://dimabors.github.io/denmark-energy-prices/dev/
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: development
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
       - name: Inject build number (dev)
         run: |
           sed -i "s/build 0/build ${{ github.run_number }}-dev/g" index.html
           sed -i "s/dk-energy-prices-v6/dk-energy-prices-v6-dev-b${{ github.run_number }}/g" sw.js
 
+      - name: Adjust paths for /dev/ subfolder
+        run: |
+          # Update service worker base path
+          sed -i "s|const BASE_PATH = '/denmark-energy-prices'|const BASE_PATH = '/denmark-energy-prices/dev'|g" sw.js
+          # Update manifest.json start_url and scope
+          sed -i 's|"/denmark-energy-prices/"|"/denmark-energy-prices/dev/"|g' manifest.json
+          # Update any absolute links in HTML files that reference /denmark-energy-prices/
+          for f in *.html; do
+            sed -i 's|href="/denmark-energy-prices/|href="/denmark-energy-prices/dev/|g' "$f"
+            sed -i 's|src="/denmark-energy-prices/|src="/denmark-energy-prices/dev/|g' "$f"
+          done
+
       - name: Create artifact directory
         run: |
           mkdir -p _site/.well-known
           cp -r index.html styles.css app.js i18n.js sw.js manifest.json widget.html widget.js icons config README.md _site/
-          cp electricity.html electricity-dk1.html electricity-dk2.html diesel.html benzin.html gas.html water.html fjernvarme.html _site/
+          cp electricity.html electricity-dk1.html electricity-dk2.html diesel.html benzin.html gas.html water.html fjernvarme.html 404.html _site/
           if [ -d ".well-known" ]; then cp -r .well-known/* _site/.well-known/; fi
           rm -f _site/icons/generate-icons.html 2>/dev/null || true
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to GitHub Pages (dev subfolder)
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          path: '_site'
-
-  deploy:
-    environment:
-      name: dev-gh-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          branch: gh-pages
+          folder: _site
+          target-folder: dev
+          clean: true
