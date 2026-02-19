@@ -124,8 +124,10 @@
                 const now = new Date();
                 const start = new Date(now); start.setHours(0,0,0,0);
                 const end = new Date(start); end.setDate(end.getDate() + 2);
-                const startStr = start.toISOString().split('T')[0];
-                const endStr = end.toISOString().split('T')[0];
+                const pad = n => String(n).padStart(2, '0');
+                const toLocalDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+                const startStr = toLocalDate(start);
+                const endStr = toLocalDate(end);
                 const filterArr = encodeURIComponent(JSON.stringify({ PriceArea: [state.region] }));
                 const filterStr = encodeURIComponent(JSON.stringify({ PriceArea: state.region }));
                 
@@ -200,14 +202,14 @@
             if (source === 'new') {
                 const hourMap = new Map();
                 allPrices.forEach(p => {
-                    const hourKey = p.time.toISOString().slice(0, 13); // YYYY-MM-DDTHH
+                    const hourKey = `${p.time.getFullYear()}-${String(p.time.getMonth()+1).padStart(2,'0')}-${String(p.time.getDate()).padStart(2,'0')}T${String(p.time.getHours()).padStart(2,'0')}`;
                     if (!hourMap.has(hourKey)) {
                         hourMap.set(hourKey, { items: [], hour: p.hour });
                     }
                     hourMap.get(hourKey).items.push(p);
                 });
                 
-                state.prices = Array.from(hourMap.values()).map(group => {
+                const hourlyPrices = Array.from(hourMap.values()).map(group => {
                     const avg = (arr, fn) => arr.reduce((s, i) => s + fn(i), 0) / arr.length;
                     return {
                         time: group.items[0].time,
@@ -216,7 +218,13 @@
                         grid: group.items[0].grid,
                         total: avg(group.items, i => i.total),
                     };
-                }).slice(-24);
+                });
+                
+                // Filter to today
+                const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+                const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+                state.prices = hourlyPrices.filter(p => p.time >= todayStart && p.time < tomorrowStart);
+                if (state.prices.length === 0) state.prices = hourlyPrices.slice(-24);
             } else {
                 state.prices = allPrices.slice(-24);
             }

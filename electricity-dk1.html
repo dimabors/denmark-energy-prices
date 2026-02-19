@@ -92,7 +92,10 @@
         }
 
         function formatDate(date) {
-            return date.toISOString().split('T')[0];
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
         }
 
         async function fetchPrices() {
@@ -176,14 +179,18 @@
             if (source === 'new') {
                 const hourMap = new Map();
                 allPrices.forEach(p => {
-                    const key = p.time.toISOString().slice(0, 13);
+                    const key = `${p.time.getFullYear()}-${String(p.time.getMonth()+1).padStart(2,'0')}-${String(p.time.getDate()).padStart(2,'0')}T${String(p.time.getHours()).padStart(2,'0')}`;
                     if (!hourMap.has(key)) hourMap.set(key, { items: [], hour: p.hour });
                     hourMap.get(key).items.push(p);
                 });
-                prices = Array.from(hourMap.values()).map(g => {
+                const hourlyPrices = Array.from(hourMap.values()).map(g => {
                     const avg = (arr, fn) => arr.reduce((s, i) => s + fn(i), 0) / arr.length;
                     return { time: g.items[0].time, hour: g.hour, spot: avg(g.items, i => i.spot), grid: g.items[0].grid, total: avg(g.items, i => i.total) };
-                }).slice(-24);
+                });
+                const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+                const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+                prices = hourlyPrices.filter(p => p.time >= todayStart && p.time < tomorrowStart);
+                if (prices.length === 0) prices = hourlyPrices.slice(-24);
             } else {
                 prices = allPrices.slice(-24);
             }

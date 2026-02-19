@@ -204,7 +204,7 @@ async function fetchElectricityPrices() {
         if (!data.records || data.records.length === 0) {
             url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
                 `filter={"PriceArea":["${state.region}"]}&` +
-                `sort=TimeUTC desc&limit=48`;
+                `sort=TimeDK desc&limit=200`;
             response = await fetch(url);
             data = await response.json();
             if (data.records?.length) {
@@ -240,7 +240,7 @@ async function fetchElectricityPricesLegacy() {
         `start=${formatDateParam(todayStart)}&` +
         `end=${formatDateParam(tomorrowEnd)}&` +
         `filter={"PriceArea":["${state.region}"]}&` +
-        `sort=HourUTC asc&` +
+        `sort=HourDK asc&` +
         `limit=0`;
     
     try {
@@ -266,7 +266,7 @@ async function fetchHistoricalPrices() {
         `start=${formatDateParam(start)}&` +
         `end=${formatDateParam(end)}&` +
         `filter={"PriceArea":["${state.region}"]}&` +
-        `sort=TimeUTC asc&` +
+        `sort=TimeDK asc&` +
         `limit=0`;
     
     try {
@@ -277,7 +277,7 @@ async function fetchHistoricalPrices() {
         
         if (data.records && data.records.length > 0) {
             state.historicalPrices = data.records.map(record => {
-                const time = new Date(record.TimeUTC || record.TimeDK);
+                const time = new Date(record.TimeDK || record.TimeUTC);
                 const spotPrice = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH;
                 const gridCost = getGridCost(time, state.region);
                 return {
@@ -349,7 +349,7 @@ function processPriceData(records) {
     const now = new Date();
     
     const allPrices = records.map(record => {
-        const time = new Date(record.TimeUTC || record.TimeDK);
+        const time = new Date(record.TimeDK || record.TimeUTC);
         const spotPriceBeforeVAT = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH; // Raw spot price (no VAT)
         const totalPrice = calculateTotalPrice(spotPriceBeforeVAT, time, state.region);
         const gridCost = getGridCost(time, state.region);
@@ -364,12 +364,42 @@ function processPriceData(records) {
         };
     });
     
-    // Use the data we have - take latest 24 and next 24 hours
-    // This handles both current data and fallback historical data
-    state.todayPrices = allPrices.slice(0, 24);
-    state.tomorrowPrices = allPrices.slice(24, 48);
+    // Group 15-min intervals by hour (local time) for chart display
+    const hourMap = new Map();
+    allPrices.forEach(p => {
+        const hourKey = `${p.time.getFullYear()}-${String(p.time.getMonth()+1).padStart(2,'0')}-${String(p.time.getDate()).padStart(2,'0')}T${String(p.time.getHours()).padStart(2,'0')}`;
+        if (!hourMap.has(hourKey)) {
+            hourMap.set(hourKey, { items: [], time: new Date(p.time) });
+        }
+        hourMap.get(hourKey).items.push(p);
+    });
     
-    // Get current price (closest to now, or latest if showing historical)
+    const hourlyPrices = Array.from(hourMap.values()).map(group => {
+        const avg = (arr, fn) => arr.reduce((s, i) => s + fn(i), 0) / arr.length;
+        return {
+            time: group.time,
+            spotPriceDKK: avg(group.items, i => i.spotPriceDKK),
+            gridCost: group.items[0].gridCost,
+            priceDKK: avg(group.items, i => i.priceDKK),
+            priceEUR: avg(group.items, i => i.priceEUR),
+        };
+    });
+    
+    // Split by local calendar day
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    
+    state.todayPrices = hourlyPrices.filter(p => p.time >= todayStart && p.time < tomorrowStart);
+    state.tomorrowPrices = hourlyPrices.filter(p => p.time >= tomorrowStart);
+    
+    // Fallback: if no today data, use latest 24 hourly entries
+    if (state.todayPrices.length === 0) {
+        state.todayPrices = hourlyPrices.slice(-24);
+    }
+    
+    // Get current price from raw 15-min data for accuracy
     const currentPriceEntry = allPrices.find(p => {
         const pTime = p.time.getTime();
         const nowTime = now.getTime();
@@ -391,7 +421,7 @@ function processPriceDataLegacy(records) {
     const now = new Date();
     
     const allPrices = records.map(record => {
-        const time = new Date(record.HourUTC || record.HourDK);
+        const time = new Date(record.HourDK || record.HourUTC);
         const spotPriceBeforeVAT = record.SpotPriceDKK / CONFIG.MWH_TO_KWH;
         const totalPrice = calculateTotalPrice(spotPriceBeforeVAT, time, state.region);
         const gridCost = getGridCost(time, state.region);
@@ -406,9 +436,18 @@ function processPriceDataLegacy(records) {
         };
     });
     
-    // Use the data we have - take latest 24 and next 24 hours
-    state.todayPrices = allPrices.slice(0, 24);
-    state.tomorrowPrices = allPrices.slice(24, 48);
+    // Split by local calendar day
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    
+    state.todayPrices = allPrices.filter(p => p.time >= todayStart && p.time < tomorrowStart);
+    state.tomorrowPrices = allPrices.filter(p => p.time >= tomorrowStart);
+    
+    if (state.todayPrices.length === 0) {
+        state.todayPrices = allPrices.slice(-24);
+    }
     
     const currentPriceEntry = allPrices.find(p => {
         const pTime = p.time.getTime();
@@ -520,7 +559,10 @@ async function fetchFuelPrices() {
 }
 
 function formatDateParam(date) {
-    return date.toISOString().split('T')[0];
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 function updateAllDisplays() {
