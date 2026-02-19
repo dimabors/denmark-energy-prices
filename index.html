@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="description" content="Danish Energy Prices - Electricity, Gas, Fuel prices widget for Denmark">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DK Energy">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <title>Danish Energy Prices</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="i18n.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <h1 data-i18n="app.title">🇩🇰 Energy Prices</h1>
+            <div class="region-selector">
+                <button id="dk1-btn" class="region-btn" data-i18n="region.dk1">DK1 (West)</button>
+                <button id="dk2-btn" class="region-btn active" data-i18n="region.dk2">DK2 (East)</button>
+            </div>
+            <div class="last-updated">
+                <span id="last-updated-text" data-i18n="loading">Loading...</span>
+                <button id="refresh-btn" class="refresh-btn" title="Refresh" data-i18n-title="refresh">⟳</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Current Electricity Price Card -->
+            <section class="price-card electricity-card">
+                <div class="card-header">
+                    <span class="card-icon">⚡</span>
+                    <span class="card-title" data-i18n="electricity">Electricity</span>
+                    <span class="price-trend" id="elec-trend"></span>
+                </div>
+                <div class="card-subtitle" data-i18n="electricity.subtitle">Spot price + Grid costs (incl. nettarif)</div>
+                <div class="current-price">
+                    <span class="price-value" id="elec-price">--</span>
+                    <span class="price-unit">DKK/kWh</span>
+                </div>
+                <div class="price-breakdown">
+                    <span class="breakdown-item">Spot: <span id="spot-price">--</span></span>
+                    <span class="breakdown-item">Grid: <span id="grid-cost">--</span></span>
+                </div>
+                <div class="price-details">
+                    <div class="detail-item">
+                        <span class="detail-label" data-i18n="today.min">Today Min</span>
+                        <span class="detail-value" id="elec-min">--</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label" data-i18n="today.max">Today Max</span>
+                        <span class="detail-value" id="elec-max">--</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label" data-i18n="avg">Avg</span>
+                        <span class="detail-value" id="elec-avg">--</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Fuel Prices Section -->
+            <section class="price-cards-row">
+                <div class="price-card small-card">
+                    <div class="card-header">
+                        <span class="card-icon">⛽</span>
+                        <span class="card-title" data-i18n="benzin95">Benzin 95</span>
+                    </div>
+                    <div class="card-source">OK</div>
+                    <div class="current-price">
+                        <span class="price-value" id="benzin-price">--</span>
+                        <span class="price-unit">DKK/L</span>
+                    </div>
+                </div>
+                <div class="price-card small-card">
+                    <div class="card-header">
+                        <span class="card-icon">🛢️</span>
+                        <span class="card-title" data-i18n="diesel">Diesel</span>
+                    </div>
+                    <div class="card-source">OK</div>
+                    <div class="current-price">
+                        <span class="price-value" id="diesel-price">--</span>
+                        <span class="price-unit">DKK/L</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Gas and Water -->
+            <section class="price-cards-row">
+                <div class="price-card small-card">
+                    <div class="card-header">
+                        <span class="card-icon">🔥</span>
+                        <span class="card-title" data-i18n="natural.gas">Natural Gas</span>
+                    </div>
+                    <div class="card-source">Evida</div>
+                    <div class="current-price">
+                        <span class="price-value" id="gas-price">--</span>
+                        <span class="price-unit">DKK/m³</span>
+                    </div>
+                </div>
+                <div class="price-card small-card">
+                    <div class="card-header">
+                        <span class="card-icon">💧</span>
+                        <span class="card-title" data-i18n="water">Water</span>
+                    </div>
+                    <div class="card-source">Novafos</div>
+                    <div class="current-price">
+                        <span class="price-value" id="water-price">--</span>
+                        <span class="price-unit">DKK/m³</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- District Heating -->
+            <section class="price-cards-row">
+                <div class="price-card small-card full-width">
+                    <div class="card-header">
+                        <span class="card-icon">🏠</span>
+                        <span class="card-title" data-i18n="fjernvarme">Fjernvarme</span>
+                    </div>
+                    <div class="card-source">Egedal Fjernvarme</div>
+                    <div class="current-price">
+                        <span class="price-value" id="fjernvarme-price">--</span>
+                        <span class="price-unit">DKK/MWh</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Electricity Price Chart -->
+            <section class="chart-section">
+                <div class="chart-header">
+                    <h2 data-i18n="chart.title">24h Electricity Prices</h2>
+                    <div class="chart-tabs">
+                        <button class="chart-tab active" data-period="today" data-i18n="chart.today">Today</button>
+                        <button class="chart-tab" data-period="tomorrow" data-i18n="chart.tomorrow">Tomorrow</button>
+                        <button class="chart-tab" data-period="week" data-i18n="chart.week">Week</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="priceChart"></canvas>
+                </div>
+                <div class="chart-legend">
+                    <div class="legend-item cheap">
+                        <span class="legend-dot"></span>
+                        <span data-i18n="chart.cheap">Cheap (&lt;1.5 DKK)</span>
+                    </div>
+                    <div class="legend-item moderate">
+                        <span class="legend-dot"></span>
+                        <span data-i18n="chart.moderate">Moderate (1.5-3 DKK)</span>
+                    </div>
+                    <div class="legend-item expensive">
+                        <span class="legend-dot"></span>
+                        <span data-i18n="chart.expensive">Expensive (&gt;3 DKK)</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Price Forecast Alert -->
+            <section class="forecast-section">
+                <h2 data-i18n="forecast.title">🔮 Price Forecast</h2>
+                <div class="forecast-alert" id="forecast-alert">
+                    <p id="forecast-text" data-i18n="forecast.loading">Loading forecast...</p>
+                </div>
+                <div class="best-hours">
+                    <h3 data-i18n="forecast.bestHours">Best Hours to Use Electricity</h3>
+                    <div class="hours-list" id="best-hours-list">
+                        <!-- Best hours will be populated dynamically -->
+                    </div>
+                </div>
+                <div class="worst-hours">
+                    <h3 data-i18n="forecast.worstHours">Avoid These Hours (Highest Prices)</h3>
+                    <div class="hours-list" id="worst-hours-list">
+                        <!-- Worst hours will be populated dynamically -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Historical Trends -->
+            <section class="chart-section">
+                <div class="chart-header">
+                    <h2 data-i18n="history.title">📈 Historical Trends</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="historyChart"></canvas>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p><span data-i18n="footer.data">Data from</span> <a href="https://www.energidataservice.dk" target="_blank">Energi Data Service</a></p>
+            <p class="version" id="app-version">v1.0 build 19</p>
+            <p class="author" data-i18n="footer.author">by Dima Bors</p>
+            <p><a href="https://github.com/dimabors/denmark-energy-prices" target="_blank" data-i18n="footer.github">Source on GitHub</a></p>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <p data-i18n="loading.prices">Loading prices...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>Water Price - Denmark</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="i18n.js"></script>
+    <style>
+        body { padding: 16px; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .standalone-card { max-width: 300px; width: 100%; }
+        .last-update { text-align: center; color: #666; font-size: 12px; margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <div class="standalone-card">
+        <section class="price-card small-card">
+            <div class="card-header">
+                <span class="card-icon">💧</span>
+                <span class="card-title" data-i18n="water">Water</span>
+            </div>
+            <div class="card-source">Novafos</div>
+            <div class="current-price">
+                <span class="price-value" id="water-price">--</span>
+                <span class="price-unit">DKK/m³</span>
+            </div>
+        </section>
+        <div class="last-update" id="last-updated"></div>
+    </div>
+
+    <script>
+        const CONFIG_URL = 'config/prices.json';
+        const DEFAULT_PRICE = 56.25;
+        
+        async function fetchPrice() {
+            try {
+                const res = await fetch(CONFIG_URL);
+                const data = await res.json();
+                const price = data.water?.price || DEFAULT_PRICE;
+                document.getElementById('water-price').textContent = price.toFixed(2);
+            } catch (e) {
+                document.getElementById('water-price').textContent = DEFAULT_PRICE.toFixed(2);
+            }
+            document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString('da-DK', {hour:'2-digit', minute:'2-digit'});
+        }
+        
+        fetchPrice();
+        setInterval(fetchPrice, 60 * 60 * 1000); // Hourly refresh
+
+        // Initialize translations
+        I18N.detectLanguage();
+        I18N.applyTranslations();
+    </script>
+</body>
+</html>
