@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#1a1a2e">
     <title>Fjernvarme Price - Denmark</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="i18n.js"></script>
     <style>
         body { padding: 16px; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
         .standalone-card { max-width: 300px; width: 100%; }
@@ -17,7 +18,7 @@
         <section class="price-card small-card">
             <div class="card-header">
                 <span class="card-icon">🏠</span>
-                <span class="card-title">Fjernvarme</span>
+                <span class="card-title" data-i18n="fjernvarme">Fjernvarme</span>
             </div>
             <div class="card-source">Egedal Fjernvarme</div>
             <div class="current-price">
@@ -46,6 +47,10 @@
         
         fetchPrice();
         setInterval(fetchPrice, 60 * 60 * 1000); // Hourly refresh
+
+        // Initialize translations
+        I18N.detectLanguage();
+        I18N.applyTranslations();
     </script>
 </body>
 </html>

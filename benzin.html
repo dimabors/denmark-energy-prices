@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#1a1a2e">
     <title>Benzin 95 Price - Denmark</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="i18n.js"></script>
     <style>
         body { padding: 16px; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
         .standalone-card { max-width: 300px; width: 100%; }
@@ -17,7 +18,7 @@
         <section class="price-card small-card">
             <div class="card-header">
                 <span class="card-icon">⛽</span>
-                <span class="card-title">Benzin 95</span>
+                <span class="card-title" data-i18n="benzin95">Benzin 95</span>
             </div>
             <div class="card-source">OK (Station 27)</div>
             <div class="current-price">
@@ -66,6 +67,10 @@
         
         fetchPrice();
         setInterval(fetchPrice, 5 * 60 * 1000);
+
+        // Initialize translations
+        I18N.detectLanguage();
+        I18N.applyTranslations();
     </script>
 </body>
 </html>
