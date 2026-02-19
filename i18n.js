@@ -61,6 +61,7 @@ const I18N = {
             // Footer
             'footer.data': 'Data from',
             'footer.author': 'by Dima Bors',
+            'footer.github': 'Source on GitHub',
 
             // Loading
             'loading.prices': 'Loading prices...',
@@ -132,6 +133,7 @@ const I18N = {
             // Footer
             'footer.data': 'Data fra',
             'footer.author': 'af Dima Bors',
+            'footer.github': 'Kildekode på GitHub',
 
             // Loading
             'loading.prices': 'Indlæser priser...',
