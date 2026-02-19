@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>DK Energy Widget</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-card: #25253d;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b8;
+            --accent-green: #4ade80;
+            --accent-yellow: #fbbf24;
+            --accent-red: #f87171;
+            --accent-blue: #60a5fa;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+        }
+        
+        .widget-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            gap: 8px;
+        }
+        
+        /* Top half - Chart */
+        .chart-section {
+            flex: 1;
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        
+        .chart-title {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .current-price-badge {
+            background: var(--accent-green);
+            color: #000;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .current-price-badge.moderate {
+            background: var(--accent-yellow);
+        }
+        
+        .current-price-badge.expensive {
+            background: var(--accent-red);
+        }
+        
+        .chart-wrapper {
+            flex: 1;
+            position: relative;
+            min-height: 80px;
+        }
+        
+        /* Bottom half - Prices */
+        .prices-section {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .price-card {
+            flex: 1;
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .price-icon {
+            font-size: 1.2rem;
+            margin-bottom: 2px;
+        }
+        
+        .price-label {
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+        
+        .price-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+        }
+        
+        .price-unit {
+            font-size: 0.55rem;
+            color: var(--text-secondary);
+        }
+        
+        .price-value.cheap { color: var(--accent-green); }
+        .price-value.moderate { color: var(--accent-yellow); }
+        .price-value.expensive { color: var(--accent-red); }
+        
+        .last-updated {
+            font-size: 0.5rem;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 4px;
+            opacity: 0.7;
+        }
+        
+        /* Loading state */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+        
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--bg-card);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="widget-container">
+        <!-- Top: Mini Chart -->
+        <div class="chart-section">
+            <div class="chart-header">
+                <span class="chart-title">⚡ Electricity 24h</span>
+                <span class="current-price-badge" id="current-badge">--</span>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="miniChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Bottom: Price Cards -->
+        <div class="prices-section">
+            <div class="price-card">
+                <span class="price-icon">⚡</span>
+                <span class="price-label">El Now</span>
+                <span class="price-value" id="elec-price">--</span>
+                <span class="price-unit">DKK/kWh</span>
+            </div>
+            <div class="price-card">
+                <span class="price-icon">🛢️</span>
+                <span class="price-label">Diesel</span>
+                <span class="price-value" id="diesel-price">--</span>
+                <span class="price-unit">DKK/L</span>
+            </div>
+        </div>
+        
+        <div class="last-updated" id="last-updated">Loading...</div>
+    </div>
+    
+    <script src="widget.js"></script>
+</body>
+</html>
