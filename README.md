@@ -18,6 +18,8 @@ A Progressive Web App (PWA) that displays real-time energy prices in Denmark, in
 - **🖥️ Compact Widget**: Dedicated widget page for home screen display
 - **🌐 PWA**: Install as a standalone app on any device
 - **🔄 Offline Support**: Works offline with cached data via Service Worker
+- **🇩🇰 Danish/English Language Support**: Auto-detects browser language; shows Danish for `da` locale, English otherwise
+- **🔔 Price Notifications**: Push notifications when electricity exceeds 5 DKK/kWh or drops below 3 DKK/kWh (active 09:00–22:00)
 - **🤖 Android TWA**: Trusted Web Activity wrapper for Google Play Store distribution
 - **⚙️ Auto-Updated Prices**: GitHub Actions workflow fetches fjernvarme prices from PDF weekly
 - **📦 GitHub Releases**: Automated releases with versioned artifacts via GitHub Actions
@@ -74,7 +76,9 @@ The total electricity price includes all components with 25% VAT:
 
 ### As a PWA (Recommended)
 
-1. Visit the deployed site: `https://dimabors.github.io/denmark-energy-prices/`
+1. Visit the deployed site:
+   - **Production**: `https://dimabors.github.io/denmark-energy-prices/`
+   - **Development**: `https://dimabors.github.io/denmark-energy-prices/dev/`
 2. On Android: Tap the "Add to Home Screen" prompt or menu option
 3. On iOS: Tap Share → "Add to Home Screen"
 
@@ -108,14 +112,17 @@ This project uses GitHub Actions to automatically deploy to GitHub Pages.
 ### Setup GitHub Pages
 
 1. Go to your repository Settings → Pages
-2. Under "Build and deployment", select "GitHub Actions"
-3. Push to the `main` branch to trigger deployment
+2. Under "Build and deployment", select **Deploy from a branch**
+3. Choose branch: `gh-pages` / `/ (root)` and click Save
+4. Push to `main` → deploys production to root (`/denmark-energy-prices/`)
+5. Push to `development` → deploys dev to subfolder (`/denmark-energy-prices/dev/`)
 
 ### GitHub Actions Workflows
 
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|
-| Deploy | `.github/workflows/deploy.yml` | Push to `main` | Build & deploy to GitHub Pages |
+| Deploy | `.github/workflows/deploy.yml` | Push to `main` | Build & deploy production to `gh-pages` branch (root) |
+| Deploy Dev | `.github/workflows/deploy-dev.yml` | Push to `development` | Build & deploy dev to `gh-pages` branch (`/dev/` subfolder) |
 | Update Prices | `.github/workflows/update-prices.yml` | Weekly / Monthly / Manual | Fetch fjernvarme PDF & update config |
 | Release | `.github/workflows/release.yml` | Tag `v*` / Manual | Create GitHub Release with artifacts |
 
@@ -153,7 +160,8 @@ denmark-energy-prices/
 ├── index.html              # Main app page
 ├── styles.css              # Mobile-first CSS styles
 ├── app.js                  # Main application logic & API integration
-├── sw.js                   # Service Worker for offline support
+├── i18n.js                 # Internationalization (Danish/English translations)
+├── sw.js                   # Service Worker for offline support & notifications
 ├── manifest.json           # PWA manifest
 ├── widget.html             # Compact widget page for home screen
 ├── widget.js               # Widget-specific logic
@@ -264,6 +272,35 @@ Auto-updated via GitHub Actions. Fallback values defined in `CONFIG.STATIC_PRICE
 - Gas (Evida): 8.95 DKK/m³
 - Fjernvarme (Egedal): 485 DKK/MWh
 
+## Language Support
+
+The app automatically detects the browser language:
+- **Danish (`da`)**: All UI text, chart labels, forecast messages, and notifications are shown in Danish
+- **English (default)**: Used for all other browser languages
+
+You can also override the language via `localStorage`:
+```javascript
+localStorage.setItem('preferredLanguage', 'da'); // Force Danish
+localStorage.setItem('preferredLanguage', 'en'); // Force English
+```
+
+Translations are managed in `i18n.js` with `data-i18n` attributes on HTML elements.
+
+## Price Notifications
+
+The app sends browser notifications for electricity price changes:
+
+| Alert | Trigger | Message |
+|-------|---------|---------|
+| ⚡ High Price | Price > 5 DKK/kWh | Warning to reduce consumption |
+| ✅ Price Drop | Price < 3 DKK/kWh (after being above) | Good time to use electricity |
+
+**Conditions:**
+- Only active between **09:00–22:00** local time (no overnight alerts)
+- **1-hour cooldown** between repeated alerts of the same type
+- Requires browser notification permission (requested on first visit)
+- Works in background via Service Worker
+
 ## Price Thresholds
 
 The app uses color coding for electricity prices:
@@ -306,11 +343,11 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ## TODO / Roadmap
 
-- [ ] Add push notifications for price alerts
 - [ ] Add widget variants for native Android home screen widgets
 - [ ] Historical data export (CSV)
-- [ ] Multi-language support (Danish/English)
 - [ ] CO2 emissions data integration
+- [x] ~~Push notifications for price alerts~~ (high/low price notifications added)
+- [x] ~~Multi-language support (Danish/English)~~ (i18n with browser detection)
 - [x] ~~Integrate real fuel price API~~ (OK API integrated)
 - [x] ~~Add tariffs and taxes to total price calculation~~ (full breakdown included)
 - [x] ~~Automated GitHub Releases~~ (release workflow added)

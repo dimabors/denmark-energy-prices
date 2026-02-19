@@ -7,6 +7,7 @@
     <title>Electricity Price - Denmark</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="i18n.js"></script>
     <style>
         body { padding: 16px; }
         .standalone-card { max-width: 500px; margin: 0 auto; }
@@ -22,15 +23,15 @@
 <body>
     <div class="standalone-card">
         <div class="region-toggle">
-            <button id="dk1-btn">DK1 (West)</button>
-            <button id="dk2-btn" class="active">DK2 (East)</button>
+            <button id="dk1-btn" data-i18n="region.dk1">DK1 (West)</button>
+            <button id="dk2-btn" class="active" data-i18n="region.dk2">DK2 (East)</button>
         </div>
         <section class="price-card electricity-card">
             <div class="card-header">
                 <span class="card-icon">⚡</span>
-                <span class="card-title">Electricity</span>
+                <span class="card-title" data-i18n="electricity">Electricity</span>
             </div>
-            <div class="card-subtitle">Spot price + Grid costs</div>
+            <div class="card-subtitle" data-i18n="electricity.subtitle">Spot price + Grid costs</div>
             <div class="current-price">
                 <span class="price-value" id="elec-price">--</span>
                 <span class="price-unit">DKK/kWh</span>
@@ -53,7 +54,7 @@
                     <span class="detail-value" id="elec-avg">--</span>
                 </div>
             </div>
-            <div id="status" class="loading">Loading prices...</div>
+            <div id="status" class="loading" data-i18n="loading.prices">Loading prices...</div>
         </section>
         <div class="chart-container">
             <canvas id="priceChart"></canvas>
@@ -284,6 +285,10 @@
 
         fetchPrices();
         setInterval(fetchPrices, CONFIG.REFRESH_INTERVAL);
+
+        // Initialize translations
+        I18N.detectLanguage();
+        I18N.applyTranslations();
     </script>
 </body>
 </html>

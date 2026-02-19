@@ -1,10 +1,11 @@
-const CACHE_NAME = 'dk-energy-prices-v5';
+const CACHE_NAME = 'dk-energy-prices-v6';
 const BASE_PATH = '/denmark-energy-prices';
 const STATIC_ASSETS = [
     `${BASE_PATH}/`,
     `${BASE_PATH}/index.html`,
     `${BASE_PATH}/styles.css`,
     `${BASE_PATH}/app.js`,
+    `${BASE_PATH}/i18n.js`,
     `${BASE_PATH}/manifest.json`,
     `${BASE_PATH}/widget.html`,
     `${BASE_PATH}/widget.js`,
@@ -151,7 +152,17 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
+    const url = event.notification.data?.url || '/';
     event.waitUntil(
-        clients.openWindow(event.notification.data.url)
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+            // Focus existing window if available
+            for (const client of clientList) {
+                if (client.url.includes('denmark-energy-prices') && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            // Otherwise open a new window
+            return self.clients.openWindow(url);
+        })
     );
 });
