@@ -1,0 +1,121 @@
+# GitHub Actions workflow to create GitHub Releases with artifacts
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog generation
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Create tag (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+
+      - name: Package web app
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARTIFACT_NAME="denmark-energy-prices-${VERSION}"
+          mkdir -p dist
+
+          # Include all web app files, exclude dev/build files
+          zip -r "dist/${ARTIFACT_NAME}.zip" \
+            index.html \
+            styles.css \
+            app.js \
+            sw.js \
+            manifest.json \
+            widget.html \
+            widget.js \
+            electricity.html \
+            electricity-dk1.html \
+            electricity-dk2.html \
+            benzin.html \
+            diesel.html \
+            gas.html \
+            water.html \
+            fjernvarme.html \
+            404.html \
+            config/ \
+            icons/ \
+            -x "icons/generate-icons.html"
+
+          # Also include .well-known if it exists
+          if [ -d ".well-known" ]; then
+            zip -ur "dist/${ARTIFACT_NAME}.zip" .well-known/
+          fi
+
+          echo "artifact_path=dist/${ARTIFACT_NAME}.zip" >> $GITHUB_ENV
+          echo "artifact_name=${ARTIFACT_NAME}.zip" >> $GITHUB_ENV
+          ls -lh dist/
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Find previous tag
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${VERSION}$" | head -n 1)
+
+          if [ -n "$PREV_TAG" ]; then
+            echo "Generating changelog from ${PREV_TAG} to ${VERSION}"
+            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
+          else
+            echo "No previous tag found, using recent log"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
+          fi
+
+          # Write to file to handle multiline
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$CHANGELOG"
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-HEAD~20}...$VERSION"
+          } > changelog.txt
+
+          cat changelog.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "🇩🇰 Denmark Energy Prices ${{ steps.version.outputs.version }}"
+          body_path: changelog.txt
+          files: ${{ env.artifact_path }}
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
