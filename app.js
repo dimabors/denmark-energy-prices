@@ -100,6 +100,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initializeApp() {
+    // Detect language and apply translations
+    I18N.detectLanguage();
+    I18N.applyTranslations();
+    
     // Load cached data if available
     loadFromCache();
     
@@ -114,6 +118,9 @@ async function initializeApp() {
     
     // Register service worker
     registerServiceWorker();
+    
+    // Request notification permission
+    requestNotificationPermission();
 }
 
 function setupEventListeners() {
@@ -166,6 +173,9 @@ async function refreshAllData() {
         
         state.lastUpdated = new Date();
         updateLastUpdatedText();
+        
+        // Check price thresholds for notifications
+        checkPriceNotifications();
     } catch (error) {
         console.error('Failed to refresh data:', error);
         // Still try to update displays with whatever data we have
@@ -715,7 +725,7 @@ function updateChart(period) {
             labels: labels,
             datasets: [
                 {
-                    label: 'Spot Price',
+                    label: I18N.t('chart.spotPrice'),
                     data: spotPrices,
                     backgroundColor: spotColors,
                     borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 4, bottomRight: 4 },
@@ -723,7 +733,7 @@ function updateChart(period) {
                     stack: 'stack0',
                 },
                 {
-                    label: 'Grid Cost (Net)',
+                    label: I18N.t('chart.gridCost'),
                     data: gridCosts,
                     backgroundColor: 'rgba(100, 100, 120, 0.7)',
                     borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
@@ -812,7 +822,7 @@ function updateHistoryChart() {
             labels: labels,
             datasets: [
                 {
-                    label: 'Average',
+                    label: I18N.t('history.average'),
                     data: avgPrices,
                     borderColor: '#4361ee',
                     backgroundColor: 'rgba(67, 97, 238, 0.1)',
@@ -820,7 +830,7 @@ function updateHistoryChart() {
                     tension: 0.4,
                 },
                 {
-                    label: 'Min',
+                    label: I18N.t('history.min'),
                     data: minPrices,
                     borderColor: '#06d6a0',
                     borderDash: [5, 5],
@@ -828,7 +838,7 @@ function updateHistoryChart() {
                     tension: 0.4,
                 },
                 {
-                    label: 'Max',
+                    label: I18N.t('history.max'),
                     data: maxPrices,
                     borderColor: '#ef476f',
                     borderDash: [5, 5],
@@ -909,7 +919,7 @@ function updateForecast() {
     const prices = [...state.todayPrices, ...state.tomorrowPrices];
     
     if (prices.length === 0) {
-        elements.forecastText.textContent = 'Unable to load forecast data';
+        elements.forecastText.textContent = I18N.t('forecast.unable');
         return;
     }
     
@@ -939,7 +949,7 @@ function updateForecast() {
     const upcomingPrices = prices.filter(p => p.time > now).slice(0, 8);
     
     if (upcomingPrices.length < 2) {
-        elements.forecastText.textContent = 'Waiting for tomorrow\'s prices...';
+        elements.forecastText.textContent = I18N.t('forecast.waiting');
         elements.forecastAlert.className = 'forecast-alert';
         return;
     }
@@ -951,19 +961,18 @@ function updateForecast() {
     const trend = avgNext > currentPrice * 1.1 ? 'rising' : 
                   avgNext < currentPrice * 0.9 ? 'falling' : 'stable';
     
-    let message = '';
+    const params = { current: currentPrice.toFixed(2), avg: avgNext.toFixed(2) };
+    
     if (trend === 'rising') {
-        message = `⚠️ Prices are expected to INCREASE in the next few hours. Current: ${currentPrice.toFixed(2)} DKK → Average upcoming: ${avgNext.toFixed(2)} DKK. Consider running high-consumption appliances now!`;
+        elements.forecastText.textContent = I18N.t('forecast.rising', params);
         elements.forecastAlert.className = 'forecast-alert rising';
     } else if (trend === 'falling') {
-        message = `✅ Good news! Prices are expected to DECREASE. Current: ${currentPrice.toFixed(2)} DKK → Average upcoming: ${avgNext.toFixed(2)} DKK. Wait a bit for lower prices!`;
+        elements.forecastText.textContent = I18N.t('forecast.falling', params);
         elements.forecastAlert.className = 'forecast-alert falling';
     } else {
-        message = `ℹ️ Prices are stable. Current: ${currentPrice.toFixed(2)} DKK → Average upcoming: ${avgNext.toFixed(2)} DKK.`;
+        elements.forecastText.textContent = I18N.t('forecast.stable', params);
         elements.forecastAlert.className = 'forecast-alert';
     }
-    
-    elements.forecastText.textContent = message;
 }
 
 function updateLastUpdatedText() {
@@ -972,7 +981,7 @@ function updateLastUpdatedText() {
             hour: '2-digit',
             minute: '2-digit'
         });
-        elements.lastUpdatedText.textContent = `Updated: ${timeStr}`;
+        elements.lastUpdatedText.textContent = I18N.t('updated', { time: timeStr });
     }
 }
 
@@ -1060,8 +1069,8 @@ function showInstallBanner() {
     const banner = document.createElement('div');
     banner.className = 'install-banner visible';
     banner.innerHTML = `
-        <p>📱 Install as app</p>
-        <button class="install-btn" id="install-btn">Install</button>
+        <p>${I18N.t('install.message')}</p>
+        <button class="install-btn" id="install-btn">${I18N.t('install.button')}</button>
         <button class="dismiss-btn" id="dismiss-btn">✕</button>
     `;
     document.body.appendChild(banner);
@@ -1081,4 +1090,135 @@ function showInstallBanner() {
     document.getElementById('dismiss-btn').addEventListener('click', () => {
         banner.remove();
     });
+}
+
+// ============================================================
+// Push Notification System
+// Sends local notifications when:
+//   - Price goes above 5 DKK/kWh (high price alert)
+//   - Price drops back below 3 DKK/kWh (low price recovery)
+// Only between 09:00 and 22:00 local time
+// ============================================================
+
+const NOTIFICATION_CONFIG = {
+    HIGH_THRESHOLD: 5,    // DKK/kWh — alert when price exceeds this
+    LOW_THRESHOLD: 3,     // DKK/kWh — alert when price drops below this
+    QUIET_HOURS_START: 22, // 22:00 — stop notifications
+    QUIET_HOURS_END: 9,    // 09:00 — start notifications
+    COOLDOWN: 60 * 60 * 1000, // 1 hour cooldown between same notification type
+};
+
+/**
+ * Request notification permission on app load
+ */
+async function requestNotificationPermission() {
+    if (!('Notification' in window)) {
+        console.log('Notifications not supported');
+        return;
+    }
+
+    if (Notification.permission === 'default') {
+        try {
+            await Notification.requestPermission();
+            console.log('Notification permission:', Notification.permission);
+        } catch (error) {
+            console.error('Failed to request notification permission:', error);
+        }
+    }
+}
+
+/**
+ * Check if we are within the notification time window (09:00-22:00)
+ */
+function isNotificationTimeAllowed() {
+    const hour = new Date().getHours();
+    return hour >= NOTIFICATION_CONFIG.QUIET_HOURS_END && hour < NOTIFICATION_CONFIG.QUIET_HOURS_START;
+}
+
+/**
+ * Check price thresholds and send notifications if appropriate.
+ * Called after every price refresh in refreshAllData().
+ */
+function checkPriceNotifications() {
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+        return;
+    }
+
+    if (!isNotificationTimeAllowed()) {
+        return;
+    }
+
+    const currentPrice = state.currentPrices?.electricity;
+    if (currentPrice == null) return;
+
+    // Load notification state from localStorage
+    const notifState = JSON.parse(localStorage.getItem('notificationState') || '{}');
+    const now = Date.now();
+
+    // --- High price alert (> 5 DKK/kWh) ---
+    if (currentPrice > NOTIFICATION_CONFIG.HIGH_THRESHOLD) {
+        const lastHighAlert = notifState.lastHighAlert || 0;
+        if (now - lastHighAlert > NOTIFICATION_CONFIG.COOLDOWN) {
+            sendPriceNotification('high', currentPrice);
+            notifState.lastHighAlert = now;
+            notifState.wasAboveHigh = true;
+        }
+    } else {
+        // Price went back below high threshold
+        notifState.wasAboveHigh = false;
+    }
+
+    // --- Low price recovery alert (< 3 DKK/kWh after being above) ---
+    if (currentPrice < NOTIFICATION_CONFIG.LOW_THRESHOLD) {
+        const lastLowAlert = notifState.lastLowAlert || 0;
+        const wasAboveRecently = notifState.wasAboveLow !== false; // default true on first run
+        if (wasAboveRecently && (now - lastLowAlert > NOTIFICATION_CONFIG.COOLDOWN)) {
+            sendPriceNotification('low', currentPrice);
+            notifState.lastLowAlert = now;
+            notifState.wasAboveLow = false;
+        }
+    } else {
+        // Price is at or above 3 — track that we were above so we can alert on drop
+        notifState.wasAboveLow = true;
+    }
+
+    localStorage.setItem('notificationState', JSON.stringify(notifState));
+}
+
+/**
+ * Send a price notification via Service Worker or Notification API
+ */
+function sendPriceNotification(type, price) {
+    const priceStr = price.toFixed(2);
+
+    let title, body;
+    if (type === 'high') {
+        title = I18N.t('notification.highPrice.title');
+        body = I18N.t('notification.highPrice.body', { price: priceStr });
+    } else {
+        title = I18N.t('notification.lowPrice.title');
+        body = I18N.t('notification.lowPrice.body', { price: priceStr });
+    }
+
+    const options = {
+        body: body,
+        icon: 'icons/icon-192.png',
+        badge: 'icons/icon-192.png',
+        vibrate: [100, 50, 100],
+        tag: `price-${type}`,  // Replaces existing notification of same type
+        renotify: true,
+        data: { url: './' }
+    };
+
+    // Prefer Service Worker notification (works when app is in background)
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready.then(registration => {
+            registration.showNotification(title, options);
+        });
+    } else {
+        // Fallback to basic Notification API
+        new Notification(title, options);
+    }
+
+    console.log(`[Notification] ${type} price alert: ${priceStr} DKK/kWh`);
 }

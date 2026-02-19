@@ -18,6 +18,8 @@ A Progressive Web App (PWA) that displays real-time energy prices in Denmark, in
 - **🖥️ Compact Widget**: Dedicated widget page for home screen display
 - **🌐 PWA**: Install as a standalone app on any device
 - **🔄 Offline Support**: Works offline with cached data via Service Worker
+- **🇩🇰 Danish/English Language Support**: Auto-detects browser language; shows Danish for `da` locale, English otherwise
+- **🔔 Price Notifications**: Push notifications when electricity exceeds 5 DKK/kWh or drops below 3 DKK/kWh (active 09:00–22:00)
 - **🤖 Android TWA**: Trusted Web Activity wrapper for Google Play Store distribution
 - **⚙️ Auto-Updated Prices**: GitHub Actions workflow fetches fjernvarme prices from PDF weekly
 - **📦 GitHub Releases**: Automated releases with versioned artifacts via GitHub Actions
@@ -116,6 +118,7 @@ This project uses GitHub Actions to automatically deploy to GitHub Pages.
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|
 | Deploy | `.github/workflows/deploy.yml` | Push to `main` | Build & deploy to GitHub Pages |
+| Deploy Dev | `.github/workflows/deploy-dev.yml` | Push to `development` | Build & deploy to dev-gh-pages environment |
 | Update Prices | `.github/workflows/update-prices.yml` | Weekly / Monthly / Manual | Fetch fjernvarme PDF & update config |
 | Release | `.github/workflows/release.yml` | Tag `v*` / Manual | Create GitHub Release with artifacts |
 
@@ -153,7 +156,8 @@ denmark-energy-prices/
 ├── index.html              # Main app page
 ├── styles.css              # Mobile-first CSS styles
 ├── app.js                  # Main application logic & API integration
-├── sw.js                   # Service Worker for offline support
+├── i18n.js                 # Internationalization (Danish/English translations)
+├── sw.js                   # Service Worker for offline support & notifications
 ├── manifest.json           # PWA manifest
 ├── widget.html             # Compact widget page for home screen
 ├── widget.js               # Widget-specific logic
@@ -264,6 +268,35 @@ Auto-updated via GitHub Actions. Fallback values defined in `CONFIG.STATIC_PRICE
 - Gas (Evida): 8.95 DKK/m³
 - Fjernvarme (Egedal): 485 DKK/MWh
 
+## Language Support
+
+The app automatically detects the browser language:
+- **Danish (`da`)**: All UI text, chart labels, forecast messages, and notifications are shown in Danish
+- **English (default)**: Used for all other browser languages
+
+You can also override the language via `localStorage`:
+```javascript
+localStorage.setItem('preferredLanguage', 'da'); // Force Danish
+localStorage.setItem('preferredLanguage', 'en'); // Force English
+```
+
+Translations are managed in `i18n.js` with `data-i18n` attributes on HTML elements.
+
+## Price Notifications
+
+The app sends browser notifications for electricity price changes:
+
+| Alert | Trigger | Message |
+|-------|---------|---------|
+| ⚡ High Price | Price > 5 DKK/kWh | Warning to reduce consumption |
+| ✅ Price Drop | Price < 3 DKK/kWh (after being above) | Good time to use electricity |
+
+**Conditions:**
+- Only active between **09:00–22:00** local time (no overnight alerts)
+- **1-hour cooldown** between repeated alerts of the same type
+- Requires browser notification permission (requested on first visit)
+- Works in background via Service Worker
+
 ## Price Thresholds
 
 The app uses color coding for electricity prices:
@@ -306,11 +339,11 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ## TODO / Roadmap
 
-- [ ] Add push notifications for price alerts
 - [ ] Add widget variants for native Android home screen widgets
 - [ ] Historical data export (CSV)
-- [ ] Multi-language support (Danish/English)
 - [ ] CO2 emissions data integration
+- [x] ~~Push notifications for price alerts~~ (high/low price notifications added)
+- [x] ~~Multi-language support (Danish/English)~~ (i18n with browser detection)
 - [x] ~~Integrate real fuel price API~~ (OK API integrated)
 - [x] ~~Add tariffs and taxes to total price calculation~~ (full breakdown included)
 - [x] ~~Automated GitHub Releases~~ (release workflow added)
