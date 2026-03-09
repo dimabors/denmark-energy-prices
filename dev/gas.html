@@ -37,7 +37,7 @@
             try {
                 const res = await fetch(CONFIG_URL);
                 const data = await res.json();
-                const price = data.gas?.price || DEFAULT_PRICE;
+                const price = data.gas?.evida?.price || DEFAULT_PRICE;
                 document.getElementById('gas-price').textContent = price.toFixed(2);
             } catch (e) {
                 document.getElementById('gas-price').textContent = DEFAULT_PRICE.toFixed(2);

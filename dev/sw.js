@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dk-energy-prices-v6-dev-b2';
+const CACHE_NAME = 'dk-energy-prices-v6-dev-b3';
 const BASE_PATH = '/denmark-energy-prices/dev';
 const STATIC_ASSETS = [
     `${BASE_PATH}/`,
