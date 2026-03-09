@@ -197,11 +197,12 @@ async function fetchElectricityPrices() {
     tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
     
     // Fetch today and tomorrow prices
+    const filter = encodeURIComponent(JSON.stringify({ PriceArea: [state.region] }));
     let url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
         `start=${formatDateParam(todayStart)}&` +
         `end=${formatDateParam(tomorrowEnd)}&` +
-        `filter={"PriceArea":["${state.region}"]}&` +
-        `sort=TimeUTC asc&` +
+        `filter=${filter}&` +
+        `sort=TimeDK%20asc&` +
         `limit=0`;
     
     try {
@@ -213,8 +214,8 @@ async function fetchElectricityPrices() {
         // If no data for today, fetch latest available
         if (!data.records || data.records.length === 0) {
             url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
-                `filter={"PriceArea":["${state.region}"]}&` +
-                `sort=TimeDK desc&limit=200`;
+                `filter=${filter}&` +
+                `sort=TimeDK%20desc&limit=200`;
             response = await fetch(url);
             data = await response.json();
             if (data.records?.length) {
@@ -246,11 +247,12 @@ async function fetchElectricityPricesLegacy() {
     const tomorrowEnd = new Date(todayStart);
     tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
     
+    const filterLegacy = encodeURIComponent(JSON.stringify({ PriceArea: [state.region] }));
     const url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_OLD}?` +
         `start=${formatDateParam(todayStart)}&` +
         `end=${formatDateParam(tomorrowEnd)}&` +
-        `filter={"PriceArea":["${state.region}"]}&` +
-        `sort=HourDK asc&` +
+        `filter=${filterLegacy}&` +
+        `sort=HourDK%20asc&` +
         `limit=0`;
     
     try {
@@ -272,11 +274,12 @@ async function fetchHistoricalPrices() {
     const start = new Date();
     start.setDate(start.getDate() - 7);
     
+    const filterHist = encodeURIComponent(JSON.stringify({ PriceArea: [state.region] }));
     const url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
         `start=${formatDateParam(start)}&` +
         `end=${formatDateParam(end)}&` +
-        `filter={"PriceArea":["${state.region}"]}&` +
-        `sort=TimeDK asc&` +
+        `filter=${filterHist}&` +
+        `sort=TimeDK%20asc&` +
         `limit=0`;
     
     try {
@@ -288,7 +291,8 @@ async function fetchHistoricalPrices() {
         if (data.records && data.records.length > 0) {
             state.historicalPrices = data.records.map(record => {
                 const time = new Date(record.TimeDK || record.TimeUTC);
-                const spotPrice = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH;
+                const dkkPrice = record.DayAheadPriceDKK ?? (record.DayAheadPriceEUR * 7.46);
+                const spotPrice = dkkPrice / CONFIG.MWH_TO_KWH;
                 const gridCost = getGridCost(time, state.region);
                 return {
                     time: time,
@@ -360,7 +364,8 @@ function processPriceData(records) {
     
     const allPrices = records.map(record => {
         const time = new Date(record.TimeDK || record.TimeUTC);
-        const spotPriceBeforeVAT = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH; // Raw spot price (no VAT)
+        const dkkPrice = record.DayAheadPriceDKK ?? (record.DayAheadPriceEUR * 7.46);
+        const spotPriceBeforeVAT = dkkPrice / CONFIG.MWH_TO_KWH; // Raw spot price (no VAT)
         const totalPrice = calculateTotalPrice(spotPriceBeforeVAT, time, state.region);
         const gridCost = getGridCost(time, state.region);
         const spotPriceWithVAT = spotPriceBeforeVAT * CONFIG.VAT;
@@ -559,11 +564,11 @@ async function fetchFuelPrices() {
         }
     } catch (error) {
         console.error('Failed to fetch OK fuel prices:', error);
-        // Fallback to sample prices
+        // Fallback to sample prices (updated 2026-03-09)
         state.currentPrices = {
             ...(state.currentPrices || {}),
-            benzin: 13.39,  // Fallback based on typical prices
-            diesel: 12.69,
+            benzin: 14.89,
+            diesel: 16.59,
         };
     }
 }
