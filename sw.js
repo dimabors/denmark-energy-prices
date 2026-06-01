@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dk-energy-prices-v6';
+const CACHE_NAME = 'dk-energy-prices-v7';
 const BASE_PATH = '/denmark-energy-prices';
 const STATIC_ASSETS = [
     `${BASE_PATH}/`,
@@ -54,7 +54,7 @@ self.addEventListener('fetch', (event) => {
     const url = new URL(request.url);
     
     // For API requests, use network-first strategy
-    if (url.hostname === 'api.energidataservice.dk') {
+    if (url.hostname === 'www.elprisenligenu.dk') {
         event.respondWith(networkFirst(request));
         return;
     }
@@ -113,7 +113,11 @@ self.addEventListener('sync', (event) => {
 
 async function syncPrices() {
     try {
-        const response = await fetch('https://api.energidataservice.dk/dataset/DayAheadPrices?start=now-P1D&limit=100');
+        const today = new Date();
+        const y = today.getFullYear();
+        const m = String(today.getMonth() + 1).padStart(2, '0');
+        const d = String(today.getDate()).padStart(2, '0');
+        const response = await fetch(`https://www.elprisenligenu.dk/api/v1/prices/${y}/${m}-${d}_DK2.json`);
         if (response.ok) {
             const data = await response.json();
             // Notify clients of new data
