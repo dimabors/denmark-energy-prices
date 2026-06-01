@@ -4,10 +4,10 @@
  */
 
 const CONFIG = {
-    ELECTRICITY_API_BASE: 'https://api.energidataservice.dk/dataset',
+    // elprisenligenu.dk: free, CORS-enabled spot price API
+    ELPRISEN_API_BASE: 'https://www.elprisenligenu.dk/api/v1/prices',
     FUEL_API_BASE: 'https://mobility-prices.ok.dk/api/v1/fuel-prices',
     OK_FACILITY_NUMBER: 27,
-    DATASET: 'Elspotprices',
     MWH_TO_KWH: 1000,
     REGION: 'DK2',
     VAT: 1.25,
@@ -40,39 +40,44 @@ async function fetchAllData() {
     }
 }
 
-async function fetchElectricityPrices() {
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    
-    const tomorrowEnd = new Date(todayStart);
-    tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
-    
-    let url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET}?` +
-        `start=${todayStart.toISOString().split('T')[0]}&` +
-        `end=${tomorrowEnd.toISOString().split('T')[0]}&` +
-        `filter={"PriceArea":["${CONFIG.REGION}"]}&` +
-        `sort=TimeUTC asc&limit=0`;
-    
-    let response = await fetch(url);
-    if (!response.ok) throw new Error('API failed');
-    
-    let data = await response.json();
-    
-    // If no data for today, fetch latest available
-    if (!data.records || data.records.length === 0) {
-        url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET}?` +
-            `filter={"PriceArea":["${CONFIG.REGION}"]}&` +
-            `sort=TimeUTC desc&limit=48`;
-        response = await fetch(url);
-        data = await response.json();
-        if (data.records?.length) {
-            data.records.reverse();
-        }
+function elprisenUrl(date, region) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${CONFIG.ELPRISEN_API_BASE}/${y}/${m}-${d}_${region}.json`;
+}
+
+async function fetchElprisenDay(date, region) {
+    try {
+        const r = await fetch(elprisenUrl(date, region));
+        if (!r.ok) return [];
+        const arr = await r.json();
+        if (!Array.isArray(arr)) return [];
+        return arr.map(e => ({
+            HourDK: e.time_start,
+            HourUTC: e.time_start,
+            SpotPriceDKK: e.DKK_per_kWh * CONFIG.MWH_TO_KWH,
+            SpotPriceEUR: e.EUR_per_kWh * CONFIG.MWH_TO_KWH,
+        }));
+    } catch (err) {
+        console.warn('elprisen fetch failed', err);
+        return [];
     }
-    
-    if (data.records && data.records.length > 0) {
-        processPriceData(data.records);
+}
+
+async function fetchElectricityPrices() {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [todayRecs, tomorrowRecs] = await Promise.all([
+        fetchElprisenDay(today, CONFIG.REGION),
+        fetchElprisenDay(tomorrow, CONFIG.REGION),
+    ]);
+
+    const records = [...todayRecs, ...tomorrowRecs];
+    if (records.length > 0) {
+        processPriceData(records);
     }
 }
 
