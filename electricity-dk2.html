@@ -65,9 +65,7 @@
         // 2025/2026 rates for DK2 (Radius/Copenhagen area) - DKK/kWh without VAT
         const GRID_TARIFFS = { LOW: 0.1863, MEDIUM: 0.5477, HIGH: 1.3520 };
         const FIXED_FEES = { transmission: 0.049, system: 0.054, elafgift: 0.00872 };
-        const API_BASE = 'https://api.energidataservice.dk/dataset';
-        const DATASET_NEW = 'DayAheadPrices';
-        const DATASET_OLD = 'Elspotprices';
+        const API_BASE = 'https://www.elprisenligenu.dk/api/v1/prices';
         
         let prices = [];
         let chart = null;
@@ -102,59 +100,43 @@
         async function fetchPrices() {
             const statusEl = document.getElementById('status');
             try {
-                const now = new Date();
-                const start = new Date(now);
-                start.setHours(0, 0, 0, 0);
-                const end = new Date(start);
-                end.setDate(end.getDate() + 2);
-                const startStr = formatDate(start);
-                const endStr = formatDate(end);
-                
-                let records = null;
-                let source = 'new';
-                
-                // Try new DayAheadPrices dataset first (Oct 2025+)
-                try {
-                    const filterArr = encodeURIComponent(JSON.stringify({ PriceArea: [REGION] }));
-                    let url = `${API_BASE}/${DATASET_NEW}?start=${startStr}&end=${endStr}&filter=${filterArr}&sort=TimeDK%20asc&limit=0`;
-                    let res = await fetch(url);
-                    let data = await res.json();
-                    
-                    if (!data.records?.length) {
-                        url = `${API_BASE}/${DATASET_NEW}?limit=200&filter=${filterArr}&sort=TimeDK%20desc`;
-                        res = await fetch(url);
-                        data = await res.json();
-                        if (data.records?.length) data.records.reverse();
+                const today = new Date();
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+
+                const fetchDay = async (date) => {
+                    const y = date.getFullYear();
+                    const m = String(date.getMonth() + 1).padStart(2, '0');
+                    const d = String(date.getDate()).padStart(2, '0');
+                    const url = `${API_BASE}/${y}/${m}-${d}_${REGION}.json`;
+                    try {
+                        const r = await fetch(url);
+                        if (!r.ok) return [];
+                        const arr = await r.json();
+                        return Array.isArray(arr) ? arr : [];
+                    } catch (e) {
+                        return [];
                     }
-                    if (data.records?.length) records = data.records;
-                } catch (e) { console.log('DayAheadPrices failed:', e); }
-                
-                // Fallback to Elspotprices
-                if (!records) {
-                    source = 'old';
-                    const filter = encodeURIComponent(JSON.stringify({ PriceArea: REGION }));
-                    let url = `${API_BASE}/${DATASET_OLD}?start=${startStr}&end=${endStr}&filter=${filter}&sort=HourDK%20asc`;
-                    let res = await fetch(url);
-                    let data = await res.json();
-                    
-                    if (!data.records?.length) {
-                        url = `${API_BASE}/${DATASET_OLD}?limit=48&filter=${filter}&sort=HourDK%20desc`;
-                        res = await fetch(url);
-                        data = await res.json();
-                        if (data.records?.length) data.records.reverse();
-                    }
-                    if (data.records?.length) records = data.records;
-                }
-                
-                if (!records?.length) {
+                };
+
+                const [todayArr, tomorrowArr] = await Promise.all([fetchDay(today), fetchDay(tomorrow)]);
+                const combined = [...todayArr, ...tomorrowArr];
+
+                if (!combined.length) {
                     statusEl.textContent = 'No price data available';
                     statusEl.className = 'error-msg';
                     return;
                 }
-                
+
+                // Normalize to the shape processPrices('new') expects
+                const records = combined.map(e => ({
+                    TimeDK: e.time_start,
+                    DayAheadPriceDKK: e.DKK_per_kWh * 1000,
+                }));
+
                 statusEl.style.display = 'none';
-                processPrices(records, source);
-                
+                processPrices(records, 'new');
+
             } catch (e) {
                 console.error('Fetch error:', e);
                 statusEl.textContent = 'Failed to load prices: ' + e.message;

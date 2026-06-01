@@ -1,16 +1,16 @@
 /**
  * Danish Energy Prices Widget
- * Fetches electricity prices from Energi Data Service API
+ * Fetches electricity prices from elprisenligenu.dk API (CORS-enabled)
  * and displays fuel, gas, and water prices
  */
 
 // Configuration
 const CONFIG = {
-    ELECTRICITY_API_BASE: 'https://api.energidataservice.dk/dataset',
+    // elprisenligenu.dk: free, CORS-enabled spot price API for DK1/DK2
+    // Endpoint: /api/v1/prices/YYYY/MM-DD_DKn.json -> array of hourly { DKK_per_kWh, EUR_per_kWh, time_start, time_end }
+    ELPRISEN_API_BASE: 'https://www.elprisenligenu.dk/api/v1/prices',
     FUEL_API_BASE: 'https://mobility-prices.ok.dk/api/v1/fuel-prices',
     OK_FACILITY_NUMBER: 27, // Selected OK station
-    DATASET_NEW: 'DayAheadPrices', // For data after 2025-10-01
-    DATASET_OLD: 'Elspotprices',   // For historical data before 2025-10-01
     CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
     REFRESH_INTERVAL: 5 * 60 * 1000, // 5 minutes
     MWH_TO_KWH: 1000, // Convert MWh to kWh
@@ -186,125 +186,88 @@ async function refreshAllData() {
 }
 
 /**
- * Fetch electricity prices from Energi Data Service
+ * Build elprisenligenu.dk URL for a given local date and region
+ */
+function elprisenUrl(date, region) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${CONFIG.ELPRISEN_API_BASE}/${y}/${m}-${d}_${region}.json`;
+}
+
+/**
+ * Fetch one day from elprisenligenu.dk and normalize to the shape the rest of the
+ * code expects (TimeDK + per-MWh DKK/EUR), so downstream processing is unchanged.
+ */
+async function fetchElprisenDay(date, region) {
+    const url = elprisenUrl(date, region);
+    try {
+        const r = await fetch(url);
+        if (!r.ok) return [];
+        const arr = await r.json();
+        if (!Array.isArray(arr)) return [];
+        return arr.map(e => ({
+            TimeDK: e.time_start,
+            TimeUTC: e.time_start,
+            PriceArea: region,
+            DayAheadPriceDKK: e.DKK_per_kWh * CONFIG.MWH_TO_KWH,
+            DayAheadPriceEUR: e.EUR_per_kWh * CONFIG.MWH_TO_KWH,
+        }));
+    } catch (err) {
+        console.warn('elprisen fetch failed', url, err);
+        return [];
+    }
+}
+
+/**
+ * Fetch electricity prices for today and tomorrow from elprisenligenu.dk
  */
 async function fetchElectricityPrices() {
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    
-    const tomorrowEnd = new Date(todayStart);
-    tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
-    
-    // Fetch today and tomorrow prices
-    const filter = encodeURIComponent(JSON.stringify({ PriceArea: [state.region] }));
-    let url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
-        `start=${formatDateParam(todayStart)}&` +
-        `end=${formatDateParam(tomorrowEnd)}&` +
-        `filter=${filter}&` +
-        `sort=TimeDK%20asc&` +
-        `limit=0`;
-    
-    try {
-        let response = await fetch(url);
-        if (!response.ok) throw new Error('API request failed');
-        
-        let data = await response.json();
-        
-        // If no data for today, fetch latest available
-        if (!data.records || data.records.length === 0) {
-            url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
-                `filter=${filter}&` +
-                `sort=TimeDK%20desc&limit=200`;
-            response = await fetch(url);
-            data = await response.json();
-            if (data.records?.length) {
-                data.records.reverse();
-            }
-        }
-        
-        if (data.records && data.records.length > 0) {
-            processPriceData(data.records);
-        } else {
-            // Fallback to legacy dataset
-            await fetchElectricityPricesLegacy();
-        }
-    } catch (error) {
-        console.error('Failed to fetch electricity prices:', error);
-        // Try fallback to old dataset
-        await fetchElectricityPricesLegacy();
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [todayRecs, tomorrowRecs] = await Promise.all([
+        fetchElprisenDay(today, state.region),
+        fetchElprisenDay(tomorrow, state.region),
+    ]);
+
+    const records = [...todayRecs, ...tomorrowRecs];
+    if (records.length > 0) {
+        processPriceData(records);
+    } else {
+        console.error('No electricity price data available');
     }
-    
+
     // Also fetch historical data for trends
     await fetchHistoricalPrices();
 }
 
-async function fetchElectricityPricesLegacy() {
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    
-    const tomorrowEnd = new Date(todayStart);
-    tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
-    
-    const filterLegacy = encodeURIComponent(JSON.stringify({ PriceArea: [state.region] }));
-    const url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_OLD}?` +
-        `start=${formatDateParam(todayStart)}&` +
-        `end=${formatDateParam(tomorrowEnd)}&` +
-        `filter=${filterLegacy}&` +
-        `sort=HourDK%20asc&` +
-        `limit=0`;
-    
-    try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('API request failed');
-        
-        const data = await response.json();
-        
-        if (data.records && data.records.length > 0) {
-            processPriceDataLegacy(data.records);
-        }
-    } catch (error) {
-        console.error('Failed to fetch legacy electricity prices:', error);
-    }
-}
-
 async function fetchHistoricalPrices() {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 7);
-    
-    const filterHist = encodeURIComponent(JSON.stringify({ PriceArea: [state.region] }));
-    const url = `${CONFIG.ELECTRICITY_API_BASE}/${CONFIG.DATASET_NEW}?` +
-        `start=${formatDateParam(start)}&` +
-        `end=${formatDateParam(end)}&` +
-        `filter=${filterHist}&` +
-        `sort=TimeDK%20asc&` +
-        `limit=0`;
-    
-    try {
-        const response = await fetch(url);
-        if (!response.ok) return;
-        
-        const data = await response.json();
-        
-        if (data.records && data.records.length > 0) {
-            state.historicalPrices = data.records.map(record => {
-                const time = new Date(record.TimeDK || record.TimeUTC);
-                const dkkPrice = record.DayAheadPriceDKK ?? (record.DayAheadPriceEUR * 7.46);
-                const spotPrice = dkkPrice / CONFIG.MWH_TO_KWH;
-                const gridCost = getGridCost(time, state.region);
-                return {
-                    time: time,
-                    spotPriceDKK: spotPrice,
-                    gridCost: gridCost,
-                    priceDKK: spotPrice + gridCost,
-                    priceEUR: record.DayAheadPriceEUR / CONFIG.MWH_TO_KWH,
-                };
-            });
-        }
-    } catch (error) {
-        console.error('Failed to fetch historical prices:', error);
+    const today = new Date();
+    const days = [];
+    for (let i = 7; i >= 1; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        days.push(d);
+    }
+
+    const results = await Promise.all(days.map(d => fetchElprisenDay(d, state.region)));
+    const records = results.flat();
+
+    if (records.length > 0) {
+        state.historicalPrices = records.map(record => {
+            const time = new Date(record.TimeDK);
+            const spotPrice = record.DayAheadPriceDKK / CONFIG.MWH_TO_KWH;
+            const gridCost = getGridCost(time, state.region);
+            return {
+                time: time,
+                spotPriceDKK: spotPrice,
+                gridCost: gridCost,
+                priceDKK: spotPrice + gridCost,
+                priceEUR: record.DayAheadPriceEUR / CONFIG.MWH_TO_KWH,
+            };
+        });
     }
 }
 
@@ -419,55 +382,6 @@ function processPriceData(records) {
         const pTime = p.time.getTime();
         const nowTime = now.getTime();
         return pTime <= nowTime && (pTime + 15 * 60 * 1000) > nowTime;
-    }) || allPrices[allPrices.length - 1] || allPrices[0];
-    
-    if (currentPriceEntry) {
-        state.currentPrices = {
-            ...(state.currentPrices || {}),
-            electricity: currentPriceEntry.priceDKK,
-            spotPrice: currentPriceEntry.spotPriceDKK,
-            gridCost: currentPriceEntry.gridCost,
-            electricityEUR: currentPriceEntry.priceEUR,
-        };
-    }
-}
-
-function processPriceDataLegacy(records) {
-    const now = new Date();
-    
-    const allPrices = records.map(record => {
-        const time = new Date(record.HourDK || record.HourUTC);
-        const spotPriceBeforeVAT = record.SpotPriceDKK / CONFIG.MWH_TO_KWH;
-        const totalPrice = calculateTotalPrice(spotPriceBeforeVAT, time, state.region);
-        const gridCost = getGridCost(time, state.region);
-        const spotPriceWithVAT = spotPriceBeforeVAT * CONFIG.VAT;
-        
-        return {
-            time: time,
-            spotPriceDKK: spotPriceWithVAT,
-            gridCost: gridCost,
-            priceDKK: totalPrice,
-            priceEUR: record.SpotPriceEUR / CONFIG.MWH_TO_KWH,
-        };
-    });
-    
-    // Split by local calendar day
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const tomorrowStart = new Date(todayStart);
-    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-    
-    state.todayPrices = allPrices.filter(p => p.time >= todayStart && p.time < tomorrowStart);
-    state.tomorrowPrices = allPrices.filter(p => p.time >= tomorrowStart);
-    
-    if (state.todayPrices.length === 0) {
-        state.todayPrices = allPrices.slice(-24);
-    }
-    
-    const currentPriceEntry = allPrices.find(p => {
-        const pTime = p.time.getTime();
-        const nowTime = now.getTime();
-        return pTime <= nowTime && (pTime + 60 * 60 * 1000) > nowTime;
     }) || allPrices[allPrices.length - 1] || allPrices[0];
     
     if (currentPriceEntry) {
